@@ -25,7 +25,7 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 
 **Kalender**
 - Moderne Monatsansicht mit Tagesagenda
-- Eigene Termine mit Datum, Uhrzeit und Notiz
+- Eigene Termine mit Datum, Von–Bis-Zeit und Notiz
 - Fällige Tasks erscheinen automatisch im Kalender
 - Aufgaben direkt für einen ausgewählten Kalendertag erstellen und bearbeiten
 - Termine und Tasks mit einem Tipp in Google Kalender übernehmen

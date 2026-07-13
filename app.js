@@ -6,7 +6,7 @@
   "use strict";
 
   const KEY = "momentum_v1";
-  const APP_VERSION = "2.3";
+  const APP_VERSION = "2.4";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -14,6 +14,11 @@
 
   /* ---------- Datum-Helfer (lokale Zeit) ---------- */
   const pad = (n) => String(n).padStart(2, "0");
+  const timeMinutes = (time) => { const [hours, minutes] = String(time || "0:0").split(":").map(Number); return hours * 60 + minutes; };
+  const defaultEndTime = (startTime) => {
+    const total = Math.min(23 * 60 + 59, timeMinutes(startTime) + 60);
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  };
   const dateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const parseDate = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const todayStr = () => dateStr(new Date());
@@ -70,6 +75,11 @@
       s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
       s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
       s.events = Array.isArray(s.events) ? s.events : [];
+      s.events.forEach((event) => {
+        event.startTime = event.startTime || event.time || "";
+        event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
+        delete event.time;
+      });
       s.version = 3;
       return s;
     } catch (e) {
@@ -409,8 +419,8 @@
     const events = state.events.filter((event) => event.date === ds).map((event) => ({ ...event, kind: "event" }));
     const tasks = allTasks()
       .filter((task) => task.dueDate === ds)
-      .map((task) => ({ id: task.id, title: task.text, date: task.dueDate, time: "", done: task.done, sectionId: task.sectionId, kind: "task" }));
-    return [...events, ...tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+      .map((task) => ({ id: task.id, title: task.text, date: task.dueDate, startTime: "", endTime: "", done: task.done, sectionId: task.sectionId, kind: "task" }));
+    return [...events, ...tasks].sort((a, b) => (a.startTime || "99:99").localeCompare(b.startTime || "99:99"));
   }
 
   function renderCalendar() {
@@ -450,7 +460,7 @@
         </div>`;
       }
       return `<div class="agenda-item" data-event-id="${item.id}">
-        <span class="agenda-item__time">${item.time || "Ganztägig"}</span><span class="agenda-item__line"></span>
+        <span class="agenda-item__time">${item.startTime && item.endTime ? `${item.startTime}–${item.endTime}` : "Ganztägig"}</span><span class="agenda-item__line"></span>
         <button class="agenda-item__content" data-edit-event="${item.id}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.notes || "Momentum-Termin")}</small></button>
         <a class="agenda-item__google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>
       </div>`;
@@ -460,11 +470,11 @@
   function googleCalendarUrl(item) {
     const day = item.date.replaceAll("-", "");
     let dates;
-    if (item.time) {
-      const start = `${day}T${item.time.replace(":", "")}00`;
-      const endDate = new Date(`${item.date}T${item.time}:00`);
-      endDate.setHours(endDate.getHours() + 1);
-      const end = `${dateStr(endDate).replaceAll("-", "")}T${pad(endDate.getHours())}${pad(endDate.getMinutes())}00`;
+    const startTime = item.startTime || item.time || "";
+    const endTime = item.endTime || (startTime ? defaultEndTime(startTime) : "");
+    if (startTime) {
+      const start = `${day}T${startTime.replace(":", "")}00`;
+      const end = `${day}T${endTime.replace(":", "")}00`;
       dates = `${start}/${end}`;
     } else {
       dates = `${day}/${dateStr(addDays(parseDate(item.date), 1)).replaceAll("-", "")}`;
@@ -547,7 +557,7 @@
       <div class="field"><label for="task-section">Block</label><select class="select" id="task-section">${state.taskSections.map((section) => `<option value="${section.id}" ${section.id === originalSectionId ? "selected" : ""}>${escapeHtml(section.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="task-date">Datum (optional)</label><input class="input" id="task-date" type="date" value="${item.dueDate || ""}"><p class="field-hint">Ohne Datum bleibt die Aufgabe nur in der Taskliste. Mit Datum erscheint sie zusätzlich im Kalender.</p></div>
       <button class="btn" id="task-save">${task ? "Speichern" : "Aufgabe hinzufügen"}</button>
-      ${task && item.dueDate ? `<a class="btn btn--google" href="${escapeHtml(googleCalendarUrl({ title: item.text, date: item.dueDate, time: "", notes: "Momentum-Aufgabe" }))}" target="_blank" rel="noopener">In Google Kalender öffnen</a>` : ""}
+      ${task && item.dueDate ? `<a class="btn btn--google" href="${escapeHtml(googleCalendarUrl({ title: item.text, date: item.dueDate, startTime: "", endTime: "", notes: "Momentum-Aufgabe" }))}" target="_blank" rel="noopener">In Google Kalender öffnen</a>` : ""}
       ${task ? `<div class="btn-row"><button class="btn btn--ghost" id="task-archive">Archivieren</button><button class="btn btn--danger" id="task-delete">Löschen</button></div>` : ""}
     `);
     sheet.querySelector("[data-close]").onclick = closeSheet;
@@ -599,7 +609,9 @@
 
   function openEventEditor(event) {
     const isNew = !event;
-    const item = event || { id: uid(), title: "", date: calendarSelected || todayStr(), time: "", notes: "" };
+    const item = event || { id: uid(), title: "", date: calendarSelected || todayStr(), startTime: "09:00", endTime: "10:00", notes: "" };
+    const startValue = item.startTime || item.time || "";
+    const endValue = item.endTime || (startValue ? defaultEndTime(startValue) : "");
     const sheet = openSheet(`
       <div class="sheet__head">
         <div><span class="sheet__eyebrow">Kalender</span><div class="sheet__title">${isNew ? "Neuer Termin" : "Termin bearbeiten"}</div></div>
@@ -607,9 +619,10 @@
       </div>
       <div class="event-accent"></div>
       <div class="field"><label for="event-title">Was steht an?</label><input class="input" id="event-title" name="momentum-event-title" maxlength="100" value="${escapeHtml(item.title)}" placeholder="z. B. Training oder Fokuszeit" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+      <div class="field"><label for="event-date">Datum</label><input class="input" id="event-date" type="date" value="${item.date}"></div>
       <div class="event-time-grid">
-        <div class="field"><label for="event-date">Datum</label><input class="input" id="event-date" type="date" value="${item.date}"></div>
-        <div class="field"><label for="event-time">Uhrzeit (optional)</label><input class="input" id="event-time" type="time" value="${item.time || ""}"></div>
+        <div class="field"><label for="event-start-time">Von</label><input class="input" id="event-start-time" type="time" value="${startValue}"></div>
+        <div class="field"><label for="event-end-time">Bis</label><input class="input" id="event-end-time" type="time" value="${endValue}"></div>
       </div>
       <div class="field"><label for="event-notes">Notiz</label><textarea class="input input--textarea" id="event-notes" name="momentum-event-notes" maxlength="300" placeholder="Details, Ort oder Erinnerung" autocomplete="off" autocorrect="off" spellcheck="false">${escapeHtml(item.notes || "")}</textarea></div>
       <button class="btn" id="event-save">${isNew ? "Termin hinzufügen" : "Änderungen speichern"}</button>
@@ -619,10 +632,15 @@
     sheet.querySelector("#event-save").onclick = () => {
       const title = sheet.querySelector("#event-title").value.trim();
       const date = sheet.querySelector("#event-date").value;
-      if (!title || !date) { toast("Bitte Titel und Datum eingeben"); return; }
+      const startTime = sheet.querySelector("#event-start-time").value;
+      const endTime = sheet.querySelector("#event-end-time").value;
+      if (!title || !date || !startTime || !endTime) { toast("Bitte Titel, Datum und Von–Bis-Zeit eingeben"); return; }
+      if (timeMinutes(endTime) <= timeMinutes(startTime)) { toast("Die Bis-Zeit muss nach der Von-Zeit liegen"); return; }
       item.title = title;
       item.date = date;
-      item.time = sheet.querySelector("#event-time").value;
+      item.startTime = startTime;
+      item.endTime = endTime;
+      delete item.time;
       item.notes = sheet.querySelector("#event-notes").value.trim();
       if (isNew) state.events.push(item);
       save();
@@ -819,6 +837,11 @@
         s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
         s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
         s.events = Array.isArray(s.events) ? s.events : [];
+        s.events.forEach((event) => {
+          event.startTime = event.startTime || event.time || "";
+          event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
+          delete event.time;
+        });
         s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
         if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
         state = s; save(); applyTheme();
@@ -978,7 +1001,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=9").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=10").then((registration) => registration.update()).catch(() => {});
     }
   }
 
