@@ -619,5 +619,8 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  // Robust starten – auch wenn das Skript erst nach dem Laden ausgeführt wird
+  // (z. B. in einer Vorschau-Sandbox), sonst würde init() nie laufen.
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();
