@@ -6,7 +6,7 @@
   "use strict";
 
   const KEY = "momentum_v1";
-  const APP_VERSION = "2.2";
+  const APP_VERSION = "2.2.1";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -519,7 +519,7 @@
     const item = task || { id: uid(), text: "", dueDate: prefillDate || "", done: false, createdAt: Date.now() };
     const sheet = openSheet(`
       <div class="sheet__head"><div class="sheet__title">${task ? "Aufgabe bearbeiten" : "Neue Aufgabe"}</div><button class="sheet__close" data-close>Abbrechen</button></div>
-      <div class="field"><label for="task-title">Aufgabe</label><input class="input" id="task-title" maxlength="140" value="${escapeHtml(item.text)}" placeholder="Was möchtest du erledigen?"></div>
+      <div class="field"><label for="task-title">Aufgabe</label><input class="input" id="task-title" name="momentum-task-title" maxlength="140" value="${escapeHtml(item.text)}" placeholder="Was möchtest du erledigen?" autocomplete="off" autocorrect="off" spellcheck="false"></div>
       <div class="field"><label for="task-section">Block</label><select class="select" id="task-section">${state.taskSections.map((section) => `<option value="${section.id}" ${section.id === originalSectionId ? "selected" : ""}>${escapeHtml(section.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="task-date">Datum (optional)</label><input class="input" id="task-date" type="date" value="${item.dueDate || ""}"><p class="field-hint">Ohne Datum bleibt die Aufgabe nur in der Taskliste. Mit Datum erscheint sie zusätzlich im Kalender.</p></div>
       <button class="btn" id="task-save">${task ? "Speichern" : "Aufgabe hinzufügen"}</button>
@@ -551,7 +551,7 @@
   function openSectionEditor(section) {
     const sheet = openSheet(`
       <div class="sheet__head"><div class="sheet__title">${section ? "Block bearbeiten" : "Neuer Block"}</div><button class="sheet__close" data-close>Abbrechen</button></div>
-      <div class="field"><label for="section-name">Name</label><input class="input" id="section-name" maxlength="40" value="${escapeHtml(section ? section.name : "")}" placeholder="z. B. Arbeit, Privat oder Später"></div>
+      <div class="field"><label for="section-name">Bezeichnung</label><input class="input" id="section-name" name="momentum-section-title" maxlength="40" value="${escapeHtml(section ? section.name : "")}" placeholder="z. B. Arbeit, Privat oder Später" autocomplete="off" autocorrect="off" spellcheck="false"></div>
       <button class="btn" id="section-save">${section ? "Speichern" : "Block hinzufügen"}</button>
       ${section && state.taskSections.length > 1 ? `<button class="btn btn--danger" id="section-delete">Block löschen</button>` : ""}
     `);
@@ -582,12 +582,12 @@
         <button class="sheet__close" data-close>Abbrechen</button>
       </div>
       <div class="event-accent"></div>
-      <div class="field"><label for="event-title">Was steht an?</label><input class="input" id="event-title" maxlength="100" value="${escapeHtml(item.title)}" placeholder="z. B. Training oder Fokuszeit"></div>
+      <div class="field"><label for="event-title">Was steht an?</label><input class="input" id="event-title" name="momentum-event-title" maxlength="100" value="${escapeHtml(item.title)}" placeholder="z. B. Training oder Fokuszeit" autocomplete="off" autocorrect="off" spellcheck="false"></div>
       <div class="event-time-grid">
         <div class="field"><label for="event-date">Datum</label><input class="input" id="event-date" type="date" value="${item.date}"></div>
         <div class="field"><label for="event-time">Uhrzeit (optional)</label><input class="input" id="event-time" type="time" value="${item.time || ""}"></div>
       </div>
-      <div class="field"><label for="event-notes">Notiz</label><textarea class="input input--textarea" id="event-notes" maxlength="300" placeholder="Details, Ort oder Erinnerung">${escapeHtml(item.notes || "")}</textarea></div>
+      <div class="field"><label for="event-notes">Notiz</label><textarea class="input input--textarea" id="event-notes" name="momentum-event-notes" maxlength="300" placeholder="Details, Ort oder Erinnerung" autocomplete="off" autocorrect="off" spellcheck="false">${escapeHtml(item.notes || "")}</textarea></div>
       <button class="btn" id="event-save">${isNew ? "Termin hinzufügen" : "Änderungen speichern"}</button>
       ${isNew ? "" : `<a class="btn btn--google" id="event-google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener">Mit Google Kalender öffnen</a><button class="btn btn--danger" id="event-delete">Termin löschen</button>`}
     `);
@@ -722,11 +722,11 @@
       </div>
       <div class="field">
         <label>Symbol (Emoji)</label>
-        <input class="input" id="h-emoji" maxlength="2" value="${escapeHtml(h.emoji || "")}" placeholder="z. B. 🏋️">
+        <input class="input" id="h-emoji" name="momentum-habit-symbol" maxlength="2" value="${escapeHtml(h.emoji || "")}" placeholder="z. B. 🏋️" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="field">
-        <label>Name</label>
-        <input class="input" id="h-name" maxlength="60" value="${escapeHtml(h.name || "")}" placeholder="z. B. Aufstehen um 5 Uhr">
+        <label for="h-title">Gewohnheit</label>
+        <input class="input" id="h-title" name="momentum-habit-title" maxlength="60" value="${escapeHtml(h.name || "")}" placeholder="z. B. Aufstehen um 5 Uhr" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="field">
         <label>Typ</label>
@@ -752,7 +752,7 @@
       sheet.querySelector("#target-field").hidden = type !== "weekly";
     });
     sheet.querySelector("#h-save").onclick = () => {
-      const name = sheet.querySelector("#h-name").value.trim();
+      const name = sheet.querySelector("#h-title").value.trim();
       if (!name) { toast("Bitte einen Namen eingeben"); return; }
       const emoji = sheet.querySelector("#h-emoji").value.trim();
       const target = type === "weekly" ? Math.min(7, Math.max(1, parseInt(sheet.querySelector("#h-target").value) || 3)) : 1;
@@ -954,7 +954,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=7").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=8").then((registration) => registration.update()).catch(() => {});
     }
   }
 
