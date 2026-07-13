@@ -14,7 +14,13 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - **Wochen-Verlauf-Grafik** über die 7 Tage (0–100 %)
 
 **Tasks**
-- Kurzfristige & langfristige Aufgaben, abhakbar
+- Kurzfristige & langfristige Aufgaben, abhakbar und mit Fälligkeitsdatum
+
+**Kalender**
+- Moderne Monatsansicht mit Tagesagenda
+- Eigene Termine mit Datum, Uhrzeit und Notiz
+- Fällige Tasks erscheinen automatisch im Kalender
+- Termine und Tasks mit einem Tipp in Google Kalender übernehmen
 
 **Sonstiges**
 - Hell/Dunkel/Automatisch

@@ -7,6 +7,7 @@
 
   const KEY = "momentum_v1";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 
@@ -43,6 +44,7 @@
       ],
       log: {},
       tasks: { short: [], long: [] },
+      events: [],
     };
   }
 
@@ -60,6 +62,8 @@
       s.tasks = s.tasks || { short: [], long: [] };
       s.tasks.short = s.tasks.short || [];
       s.tasks.long = s.tasks.long || [];
+      s.events = Array.isArray(s.events) ? s.events : [];
+      s.version = 2;
       return s;
     } catch (e) {
       console.warn("Konnte Daten nicht laden, starte neu.", e);
@@ -75,6 +79,8 @@
   let currentMonday;      // Mo der angezeigten Woche (String)
   let selectedDate;       // ausgewählter Tag (String)
   let screen = "habits";
+  let calendarMonth;
+  let calendarSelected;
 
   /* ---------- Berechnungen ---------- */
   const dailyHabits = () => state.habits.filter((h) => h.type === "daily");
@@ -133,6 +139,7 @@
     const W = 320, H = 150, padL = 28, padR = 12, padT = 12, padB = 24;
     const innerW = W - padL - padR, innerH = H - padT - padB;
     const today = todayStr();
+
     const days = weekDays(mondayStr);
     const X = (i) => padL + innerW * (i / 6);
     const Y = (p) => padT + innerH * (1 - p / 100);
@@ -193,6 +200,14 @@
     $("#week-prev").disabled = wn <= 1;
 
     const today = todayStr();
+    const hour = new Date().getHours();
+    const greeting = hour < 11 ? "Guten Morgen" : hour < 17 ? "Hallo" : "Guten Abend";
+    const todayPct = dayPercent(today) || 0;
+    const openTasks = [...state.tasks.short, ...state.tasks.long].filter((t) => !t.done).length;
+    $("#welcome-kicker").textContent = greeting;
+    $("#welcome-title").textContent = todayPct === 100 ? "Heute läuft es richtig gut." : "Mach heute zu deinem Tag.";
+    $("#welcome-copy").textContent = openTasks ? `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"} · bleib in deinem Rhythmus.` : "Kleine Schritte. Sichtbarer Fortschritt.";
+    $("#welcome-score").textContent = todayPct + "%";
 
     // Tagesstreifen
     const strip = days.map((d) => {
@@ -276,20 +291,98 @@
       const open = arr.filter((t) => !t.done).length;
       $(`#${listKey}-count`).textContent = open;
       const ul = $(`#tasks-${listKey}`);
-      const sorted = [...arr].sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+      const sorted = [...arr].sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+        return a.dueDate ? -1 : b.dueDate ? 1 : 0;
+      });
       ul.innerHTML = sorted.length
         ? sorted.map((t) => `<li class="task ${t.done ? "is-done" : ""}" data-list="${listKey}" data-id="${t.id}">
             <span class="check task__check">${CHECK_SVG}</span>
-            <span class="task__text">${escapeHtml(t.text)}</span>
+            <span class="task__content"><span class="task__text">${escapeHtml(t.text)}</span>${t.dueDate ? `<span class="task__date ${t.dueDate < todayStr() && !t.done ? "is-overdue" : ""}">${formatLongDate(t.dueDate)}</span>` : ""}</span>
+            ${t.dueDate ? `<a class="task__google" data-task-action="google" href="${escapeHtml(googleCalendarUrl({ title: t.text, date: t.dueDate, time: "", notes: "Momentum-Aufgabe" }))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>` : ""}
             <button class="task__del" aria-label="Löschen">✕</button>
           </li>`).join("")
         : `<p class="empty-hint">Noch keine Aufgaben.</p>`;
     });
   }
 
+  function formatLongDate(ds) {
+    const d = parseDate(ds);
+    return `${WD[(d.getDay() + 6) % 7]}, ${d.getDate()}. ${MONTHS[d.getMonth()].slice(0, 3)}`;
+  }
+
+  function calendarItemsFor(ds) {
+    const events = state.events.filter((event) => event.date === ds).map((event) => ({ ...event, kind: "event" }));
+    const tasks = [...state.tasks.short, ...state.tasks.long]
+      .filter((task) => task.dueDate === ds)
+      .map((task) => ({ id: task.id, title: task.text, date: task.dueDate, time: "", done: task.done, kind: "task" }));
+    return [...events, ...tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+  }
+
+  function renderCalendar() {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    $("#month-today").textContent = `${MONTHS[month]} ${year}`;
+
+    const first = new Date(year, month, 1);
+    const offset = (first.getDay() + 6) % 7;
+    const gridStart = addDays(first, -offset);
+    const today = todayStr();
+    const cells = Array.from({ length: 42 }, (_, index) => {
+      const date = addDays(gridStart, index);
+      const ds = dateStr(date);
+      const items = calendarItemsFor(ds);
+      const classes = ["calendar-day"];
+      if (date.getMonth() !== month) classes.push("is-outside");
+      if (ds === today) classes.push("is-today");
+      if (ds === calendarSelected) classes.push("is-selected");
+      return `<button class="${classes.join(" ")}" data-calendar-date="${ds}" aria-label="${date.getDate()}. ${MONTHS[date.getMonth()]} ${date.getFullYear()}">
+        <span>${date.getDate()}</span>
+        <i class="calendar-day__dots">${items.slice(0, 3).map((item) => `<b class="${item.kind === "task" ? "is-task" : ""}"></b>`).join("")}</i>
+      </button>`;
+    }).join("");
+    $("#calendar-grid").innerHTML = cells;
+
+    const selected = parseDate(calendarSelected);
+    $("#agenda-title").textContent = calendarSelected === today ? "Heute" : `${WD[(selected.getDay() + 6) % 7]}, ${selected.getDate()}. ${MONTHS[selected.getMonth()]}`;
+    const items = calendarItemsFor(calendarSelected);
+    $("#agenda-list").innerHTML = items.length ? items.map((item) => {
+      if (item.kind === "task") {
+        return `<div class="agenda-item is-task ${item.done ? "is-done" : ""}">
+          <span class="agenda-item__time">Task</span><span class="agenda-item__line"></span>
+          <span class="agenda-item__content"><strong>${escapeHtml(item.title)}</strong><small>${item.done ? "Erledigt" : "Fällig"}</small></span>
+          <a class="agenda-item__google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>
+        </div>`;
+      }
+      return `<div class="agenda-item" data-event-id="${item.id}">
+        <span class="agenda-item__time">${item.time || "Ganztägig"}</span><span class="agenda-item__line"></span>
+        <button class="agenda-item__content" data-edit-event="${item.id}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.notes || "Momentum-Termin")}</small></button>
+        <a class="agenda-item__google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>
+      </div>`;
+    }).join("") : `<div class="agenda-empty"><span>☀️</span><strong>Noch nichts geplant</strong><small>Genieße den freien Raum oder füge einen Termin hinzu.</small></div>`;
+  }
+
+  function googleCalendarUrl(item) {
+    const day = item.date.replaceAll("-", "");
+    let dates;
+    if (item.time) {
+      const start = `${day}T${item.time.replace(":", "")}00`;
+      const endDate = new Date(`${item.date}T${item.time}:00`);
+      endDate.setHours(endDate.getHours() + 1);
+      const end = `${dateStr(endDate).replaceAll("-", "")}T${pad(endDate.getHours())}${pad(endDate.getMinutes())}00`;
+      dates = `${start}/${end}`;
+    } else {
+      dates = `${day}/${dateStr(addDays(parseDate(item.date), 1)).replaceAll("-", "")}`;
+    }
+    const params = new URLSearchParams({ action: "TEMPLATE", text: item.title, dates, details: item.notes || "Erstellt mit Momentum" });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
   function render() {
     if (screen === "habits") renderHabits();
-    else renderTasks();
+    else if (screen === "tasks") renderTasks();
+    else renderCalendar();
   }
 
   /* ---------- Screen-Wechsel ---------- */
@@ -297,8 +390,10 @@
     screen = name;
     $("#screen-habits").hidden = name !== "habits";
     $("#screen-tasks").hidden = name !== "tasks";
-    $("#appbar-title").textContent = name === "habits" ? "Momentum" : "Tasks";
-    $("#appbar-sub").textContent = name === "habits" ? "Woche " + weekNumber(currentMonday) : "";
+    $("#screen-calendar").hidden = name !== "calendar";
+    const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender" };
+    $("#appbar-title").textContent = titles[name];
+    $("#appbar-sub").textContent = name === "habits" ? "Woche " + weekNumber(currentMonday) : name === "calendar" ? "Plane deinen Rhythmus" : "Was als Nächstes zählt";
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
     render();
     window.scrollTo({ top: 0 });
@@ -337,6 +432,47 @@
     return root.querySelector(".sheet");
   }
   function closeSheet() { $("#modal-root").innerHTML = ""; }
+
+  function openEventEditor(event) {
+    const isNew = !event;
+    const item = event || { id: uid(), title: "", date: calendarSelected || todayStr(), time: "", notes: "" };
+    const sheet = openSheet(`
+      <div class="sheet__head">
+        <div><span class="sheet__eyebrow">Kalender</span><div class="sheet__title">${isNew ? "Neuer Termin" : "Termin bearbeiten"}</div></div>
+        <button class="sheet__close" data-close>Abbrechen</button>
+      </div>
+      <div class="event-accent"></div>
+      <div class="field"><label for="event-title">Was steht an?</label><input class="input" id="event-title" maxlength="100" value="${escapeHtml(item.title)}" placeholder="z. B. Training oder Fokuszeit"></div>
+      <div class="event-time-grid">
+        <div class="field"><label for="event-date">Datum</label><input class="input" id="event-date" type="date" value="${item.date}"></div>
+        <div class="field"><label for="event-time">Uhrzeit (optional)</label><input class="input" id="event-time" type="time" value="${item.time || ""}"></div>
+      </div>
+      <div class="field"><label for="event-notes">Notiz</label><textarea class="input input--textarea" id="event-notes" maxlength="300" placeholder="Details, Ort oder Erinnerung">${escapeHtml(item.notes || "")}</textarea></div>
+      <button class="btn" id="event-save">${isNew ? "Termin hinzufügen" : "Änderungen speichern"}</button>
+      ${isNew ? "" : `<a class="btn btn--google" id="event-google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener">Mit Google Kalender öffnen</a><button class="btn btn--danger" id="event-delete">Termin löschen</button>`}
+    `);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#event-save").onclick = () => {
+      const title = sheet.querySelector("#event-title").value.trim();
+      const date = sheet.querySelector("#event-date").value;
+      if (!title || !date) { toast("Bitte Titel und Datum eingeben"); return; }
+      item.title = title;
+      item.date = date;
+      item.time = sheet.querySelector("#event-time").value;
+      item.notes = sheet.querySelector("#event-notes").value.trim();
+      if (isNew) state.events.push(item);
+      save();
+      calendarSelected = date;
+      calendarMonth = new Date(parseDate(date).getFullYear(), parseDate(date).getMonth(), 1);
+      closeSheet(); renderCalendar(); toast(isNew ? "Termin hinzugefügt" : "Termin gespeichert");
+    };
+    const del = sheet.querySelector("#event-delete");
+    if (del) del.onclick = () => {
+      if (!confirm(`„${item.title}" wirklich löschen?`)) return;
+      state.events = state.events.filter((entry) => entry.id !== item.id);
+      save(); closeSheet(); renderCalendar(); toast("Termin gelöscht");
+    };
+  }
 
   function openSettings() {
     const themeSeg = (val) => `<div class="seg" id="theme-seg">
@@ -511,6 +647,10 @@
       try {
         const s = JSON.parse(reader.result);
         if (!s || !Array.isArray(s.habits)) throw new Error("Ungültige Datei");
+        s.tasks = s.tasks || { short: [], long: [] };
+        s.tasks.short = s.tasks.short || [];
+        s.tasks.long = s.tasks.long || [];
+        s.events = Array.isArray(s.events) ? s.events : [];
         state = s; save(); applyTheme();
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
@@ -580,9 +720,10 @@
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         const input = form.querySelector(".addrow__input");
+        const dateInput = form.querySelector(".addrow__date");
         const text = input.value.trim(); if (!text) return;
-        state.tasks[form.dataset.list].unshift({ id: uid(), text, done: false, createdAt: Date.now() });
-        save(); input.value = ""; renderTasks();
+        state.tasks[form.dataset.list].unshift({ id: uid(), text, dueDate: dateInput.value || "", done: false, createdAt: Date.now() });
+        save(); input.value = ""; dateInput.value = ""; renderTasks();
       });
     });
 
@@ -592,12 +733,41 @@
         const li = e.target.closest(".task"); if (!li) return;
         const arr = state.tasks[li.dataset.list];
         const t = arr.find((x) => x.id === li.dataset.id); if (!t) return;
+        if (e.target.closest("[data-task-action='google']")) return;
         if (e.target.closest(".task__del")) {
           const i = arr.indexOf(t); arr.splice(i, 1); save(); renderTasks();
         } else {
           t.done = !t.done; save(); renderTasks();
         }
       });
+    });
+
+    // Kalender
+    $("#month-prev").addEventListener("click", () => {
+      calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+      calendarSelected = dateStr(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1));
+      renderCalendar();
+    });
+    $("#month-next").addEventListener("click", () => {
+      calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+      calendarSelected = dateStr(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1));
+      renderCalendar();
+    });
+    $("#month-today").addEventListener("click", () => {
+      const now = new Date(); calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1); calendarSelected = todayStr(); renderCalendar();
+    });
+    $("#calendar-grid").addEventListener("click", (e) => {
+      const day = e.target.closest("[data-calendar-date]"); if (!day) return;
+      calendarSelected = day.dataset.calendarDate;
+      const d = parseDate(calendarSelected);
+      if (d.getMonth() !== calendarMonth.getMonth() || d.getFullYear() !== calendarMonth.getFullYear()) calendarMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+      renderCalendar();
+    });
+    $("#add-event").onclick = () => openEventEditor(null);
+    $("#agenda-add").onclick = () => openEventEditor(null);
+    $("#agenda-list").addEventListener("click", (e) => {
+      const edit = e.target.closest("[data-edit-event]");
+      if (edit) openEventEditor(state.events.find((event) => event.id === edit.dataset.editEvent));
     });
   }
 
@@ -610,6 +780,9 @@
     currentMonday = dateStr(mondayOf(new Date()));
     if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
     selectedDate = defaultSelectedFor(currentMonday);
+    const now = new Date();
+    calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    calendarSelected = todayStr();
     bindEvents();
     switchScreen("habits");
 

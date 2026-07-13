@@ -1,12 +1,14 @@
 /* Momentum – Service Worker (Offline-Fähigkeit) */
-const CACHE = "momentum-v1";
+const CACHE = "momentum-v3";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=3",
+  "./app.js?v=3",
   "./manifest.webmanifest",
   "./icons/icon.svg",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
 ];
 
 self.addEventListener("install", (e) => {

@@ -6,7 +6,7 @@
 <meta name="description" content="Momentum – deine Gewohnheiten & Tasks an einem Ort." />
 
 <!-- PWA / iOS Home-Screen -->
-<meta name="theme-color" content="#0b0f14" />
+<meta name="theme-color" content="#090b14" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -16,14 +16,14 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=3" />
 
 <div id="app">
   <!-- Top App Bar -->
   <header class="appbar">
     <div class="appbar__title">
-      <span id="appbar-title">Momentum</span>
-      <span id="appbar-sub" class="appbar__sub"></span>
+      <span class="brand-row"><span class="brand-mark">M</span><span id="appbar-title">Momentum</span></span>
+      <span id="appbar-sub" class="appbar__sub">Dein persönlicher Rhythmus</span>
     </div>
     <button id="btn-settings" class="iconbtn" aria-label="Einstellungen">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -34,6 +34,15 @@
   <main id="main">
     <!-- === SCREEN: GEWOHNHEITEN === -->
     <section id="screen-habits" class="screen">
+      <div class="welcome-card">
+        <div>
+          <span id="welcome-kicker" class="welcome-card__kicker">Guten Morgen</span>
+          <h1 id="welcome-title">Mach heute zu deinem Tag.</h1>
+          <p id="welcome-copy">Kleine Schritte. Sichtbarer Fortschritt.</p>
+        </div>
+        <div id="welcome-score" class="welcome-card__score">0%</div>
+      </div>
+
       <!-- Wochen-Navigation -->
       <div class="weeknav card">
         <button id="week-prev" class="weeknav__arrow iconbtn" aria-label="Woche zurück">
@@ -84,7 +93,10 @@
           <span id="short-count" class="pill">0</span>
         </div>
         <form class="addrow" data-list="short">
-          <input class="addrow__input" type="text" placeholder="Neue kurzfristige Aufgabe…" maxlength="140" />
+          <div class="addrow__fields">
+            <input class="addrow__input" type="text" placeholder="Neue kurzfristige Aufgabe…" maxlength="140" />
+            <input class="addrow__date" type="date" aria-label="Fälligkeitsdatum" />
+          </div>
           <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
         </form>
         <ul id="tasks-short" class="task-list"></ul>
@@ -96,10 +108,45 @@
           <span id="long-count" class="pill">0</span>
         </div>
         <form class="addrow" data-list="long">
-          <input class="addrow__input" type="text" placeholder="Neue langfristige Aufgabe…" maxlength="140" />
+          <div class="addrow__fields">
+            <input class="addrow__input" type="text" placeholder="Neue langfristige Aufgabe…" maxlength="140" />
+            <input class="addrow__date" type="date" aria-label="Fälligkeitsdatum" />
+          </div>
           <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
         </form>
         <ul id="tasks-long" class="task-list"></ul>
+      </div>
+    </section>
+
+    <!-- === SCREEN: KALENDER === -->
+    <section id="screen-calendar" class="screen" hidden>
+      <div class="calendar-hero">
+        <div>
+          <span class="calendar-hero__eyebrow">Deine Zeit im Blick</span>
+          <h2>Plane mit Ruhe.</h2>
+          <p>Termine und fällige Aufgaben an einem Ort.</p>
+        </div>
+        <button id="add-event" class="floating-add" aria-label="Neuen Termin hinzufügen">＋</button>
+      </div>
+
+      <div class="card calendar-card">
+        <div class="calendar-nav">
+          <button id="month-prev" class="iconbtn" aria-label="Vorheriger Monat">‹</button>
+          <button id="month-today" class="calendar-nav__title" aria-label="Zum heutigen Monat"></button>
+          <button id="month-next" class="iconbtn" aria-label="Nächster Monat">›</button>
+        </div>
+        <div class="calendar-weekdays" aria-hidden="true">
+          <span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span>
+        </div>
+        <div id="calendar-grid" class="calendar-grid"></div>
+      </div>
+
+      <div class="card agenda-card">
+        <div class="card__title">
+          <span id="agenda-title">Heute</span>
+          <button id="agenda-add" class="text-btn">＋ Termin</button>
+        </div>
+        <div id="agenda-list" class="agenda-list"></div>
       </div>
     </section>
   </main>
@@ -114,10 +161,14 @@
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
       <span>Tasks</span>
     </button>
+    <button class="tab" data-screen="calendar">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
+      <span>Kalender</span>
+    </button>
   </nav>
 
   <!-- Modal-Container (per JS befüllt) -->
   <div id="modal-root"></div>
 </div>
 
-<script src="app.js" defer></script>
+<script src="app.js?v=3" defer></script>
