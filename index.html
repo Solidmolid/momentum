@@ -1,0 +1,123 @@
+<meta charset="UTF-8" />
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+/>
+<meta name="description" content="Momentum – deine Gewohnheiten & Tasks an einem Ort." />
+
+<!-- PWA / iOS Home-Screen -->
+<meta name="theme-color" content="#0b0f14" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Momentum" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+
+<title>Momentum</title>
+<link rel="stylesheet" href="styles.css" />
+
+<div id="app">
+  <!-- Top App Bar -->
+  <header class="appbar">
+    <div class="appbar__title">
+      <span id="appbar-title">Momentum</span>
+      <span id="appbar-sub" class="appbar__sub"></span>
+    </div>
+    <button id="btn-settings" class="iconbtn" aria-label="Einstellungen">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <!-- Main -->
+  <main id="main">
+    <!-- === SCREEN: GEWOHNHEITEN === -->
+    <section id="screen-habits" class="screen">
+      <!-- Wochen-Navigation -->
+      <div class="weeknav card">
+        <button id="week-prev" class="weeknav__arrow iconbtn" aria-label="Woche zurück">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="weeknav__center">
+          <div id="week-label" class="weeknav__label">Woche 1</div>
+          <div id="week-range" class="weeknav__range">–</div>
+        </div>
+        <button id="week-next" class="weeknav__arrow iconbtn" aria-label="Woche vor">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+
+      <!-- Tagesstreifen (Mo–So) -->
+      <div id="day-strip" class="day-strip"></div>
+
+      <!-- Tagespanel: Ring + Checkliste -->
+      <div class="card day-panel">
+        <div class="day-panel__head">
+          <div id="day-ring" class="ring"></div>
+          <div class="day-panel__meta">
+            <div id="day-title" class="day-panel__title">Heute</div>
+            <div id="day-count" class="day-panel__count">0 / 0 erledigt</div>
+          </div>
+        </div>
+        <ul id="habit-list" class="habit-list"></ul>
+      </div>
+
+      <!-- Wochenziele (z. B. Gym 3×) -->
+      <div id="weekly-card" class="card weekly-card" hidden>
+        <div class="card__title">Wochenziele</div>
+        <div id="weekly-list" class="weekly-list"></div>
+      </div>
+
+      <!-- Wochen-Verlauf (Grafik) -->
+      <div class="card chart-card">
+        <div class="card__title">Wochen-Verlauf</div>
+        <div id="week-chart" class="chart"></div>
+      </div>
+    </section>
+
+    <!-- === SCREEN: TASKS === -->
+    <section id="screen-tasks" class="screen" hidden>
+      <div class="card">
+        <div class="card__title">
+          <span>Kurzfristig</span>
+          <span id="short-count" class="pill">0</span>
+        </div>
+        <form class="addrow" data-list="short">
+          <input class="addrow__input" type="text" placeholder="Neue kurzfristige Aufgabe…" maxlength="140" />
+          <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
+        </form>
+        <ul id="tasks-short" class="task-list"></ul>
+      </div>
+
+      <div class="card">
+        <div class="card__title">
+          <span>Langfristig</span>
+          <span id="long-count" class="pill">0</span>
+        </div>
+        <form class="addrow" data-list="long">
+          <input class="addrow__input" type="text" placeholder="Neue langfristige Aufgabe…" maxlength="140" />
+          <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
+        </form>
+        <ul id="tasks-long" class="task-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Tab Bar -->
+  <nav class="tabbar">
+    <button class="tab is-active" data-screen="habits">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+      <span>Gewohnheiten</span>
+    </button>
+    <button class="tab" data-screen="tasks">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span>Tasks</span>
+    </button>
+  </nav>
+
+  <!-- Modal-Container (per JS befüllt) -->
+  <div id="modal-root"></div>
+</div>
+
+<script src="app.js" defer></script>
