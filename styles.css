@@ -136,7 +136,7 @@ body {
 .day-cell__bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 4px; }
 .day-cell.is-selected { border-color: var(--accent); background: var(--accent-soft); }
 .day-cell.is-today .day-cell__num { color: var(--accent); }
-.day-cell.is-future { opacity: .4; pointer-events: none; }
+.day-cell.is-future, .day-cell.is-before-start { opacity: .35; pointer-events: none; }
 .day-cell.is-full { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 
 /* ---------- Tagespanel ---------- */
@@ -198,7 +198,7 @@ body {
 }
 .wd-cell:active { transform: scale(0.9); }
 .wd-cell.is-done { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #052e16; border-color: transparent; }
-.wd-cell.is-future { opacity: .35; pointer-events: none; }
+.wd-cell.is-future, .wd-cell.is-before-start { opacity: .35; pointer-events: none; }
 
 /* ---------- Chart ---------- */
 .chart { width: 100%; }

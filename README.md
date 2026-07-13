@@ -7,15 +7,15 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 
 **Gewohnheiten**
 - Eigene Gewohnheiten anlegen (Emoji, Name, täglich oder wöchentliches Ziel)
-- Wochen-Ansicht: *Woche 1, 2, 3 …* (unendlich, ab einem frei wählbaren Startdatum)
+- Wochen-Ansicht: *Woche 1, 2, 3 …* ab einem frei wählbaren, exakten Starttag
 - Abhaken nur bis zum heutigen Tag – zukünftige Tage sind gesperrt
 - Alle täglichen Gewohnheiten erledigt = **100 % an dem Tag**
 - **Wochenziele** wie „Gym 3×/Woche" mit eigenem Fortschritt
 - **Wochen-Verlauf-Grafik** über die 7 Tage (0–100 %)
-- Geschwungene Fortschrittsanalyse für Woche, 30 Tage und 12 Monate
+- Geschwungene Fortschrittsanalyse seit dem Start sowie für Woche, 30 Tage und 12 Monate (`S · W · M · J`)
 - Gemeinsame Gewichtung von Tages- und Wochenzielen mit klarer Gesamtquote
 - Persönliche Durchzieh-Rate für jede tägliche Gewohnheit
-- Rückwirkendes Eintragen bis zu einem Jahr
+- Tage vor dem persönlichen Startpunkt werden nicht gewertet; ältere Daten bleiben beim Verschieben des Starts erhalten
 
 **Tasks**
 - Kurzfristige & langfristige Aufgaben, abhakbar und mit Fälligkeitsdatum

@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=12" />
+<link rel="stylesheet" href="styles.css?v=13" />
 
 <section id="auth-screen" class="auth-screen" aria-live="polite">
   <div class="auth-card">
@@ -119,7 +119,8 @@
             <div id="trend-caption" class="trend-card__caption">im Durchschnitt</div>
           </div>
           <div class="trend-range" id="trend-range" aria-label="Zeitraum auswählen">
-            <button data-range="week" class="is-active">W</button>
+            <button data-range="start" class="is-active" aria-label="Seit Start">S</button>
+            <button data-range="week">W</button>
             <button data-range="month">M</button>
             <button data-range="year">J</button>
           </div>
@@ -204,4 +205,4 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <script src="cloud.js?v=2" defer></script>
-<script src="app.js?v=12" defer></script>
+<script src="app.js?v=13" defer></script>

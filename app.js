@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "3.0";
+  const APP_VERSION = "3.1";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -35,10 +35,11 @@
 
   /* ---------- Standard-Daten ---------- */
   function seedState() {
-    const startMonday = dateStr(mondayOf(new Date()));
+    const startDate = todayStr();
+    const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
       version: 3,
-      settings: { startMonday, theme: "light" },
+      settings: { startDate, startMonday, theme: "light" },
       habits: [
         { id: uid(), emoji: "🌅", name: "Aufstehen um 5 Uhr", type: "daily", target: 1 },
         { id: uid(), emoji: "🏋️", name: "Gym", type: "weekly", target: 3 },
@@ -61,7 +62,10 @@
   let state;
   function normalizeState(s) {
     s = s && typeof s === "object" ? s : seedState();
-    s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
+    s.settings = s.settings || {};
+    const requestedStart = s.settings.startDate || s.settings.startMonday || todayStr();
+    s.settings.startDate = requestedStart > todayStr() ? todayStr() : requestedStart;
+    s.settings.startMonday = dateStr(mondayOf(parseDate(s.settings.startDate)));
     if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
     s.habits = Array.isArray(s.habits) ? s.habits : [];
     s.log = s.log || {};
@@ -110,7 +114,7 @@
   let screen = "habits";
   let calendarMonth;
   let calendarSelected;
-  let trendRange = "week";
+  let trendRange = "start";
   let archiveExpanded = false;
   let cloudUser = null;
   let cloudProfile = null;
@@ -145,7 +149,10 @@
     return { done: daily.filter((h) => rec[h.id]).length, total: daily.length };
   }
   function weeklyDone(habit, mondayStr) {
-    return weekDays(mondayStr).filter((d) => (state.log[dateStr(d)] || {})[habit.id]).length;
+    return weekDays(mondayStr).filter((d) => {
+      const ds = dateStr(d);
+      return ds >= state.settings.startDate && (state.log[ds] || {})[habit.id];
+    }).length;
   }
   function combinedCounts(ds) {
     const daily = dayCounts(ds);
@@ -171,7 +178,7 @@
     return Math.floor((cur - start) / (7 * 864e5)) + 1;
   }
   function earliestHistoryMonday() {
-    return dateStr(mondayOf(addDays(new Date(), -370)));
+    return state.settings.startMonday;
   }
   function isToggle(ds, habitId) { return !!(state.log[ds] || {})[habitId]; }
   function setToggle(ds, habitId, val) {
@@ -200,10 +207,22 @@
 
   function trendData() {
     const today = parseDate(todayStr());
+    const start = parseDate(state.settings.startDate);
     const selected = parseDate(selectedDate || todayStr());
     const reference = selected > today ? today : selected;
+    if (trendRange === "start") {
+      const count = Math.max(1, Math.floor((today - start) / 864e5) + 1);
+      const dates = Array.from({ length: count }, (_, i) => addDays(start, i));
+      const labelPoints = new Set([0, Math.round((count - 1) * .25), Math.round((count - 1) * .5), Math.round((count - 1) * .75), count - 1]);
+      return {
+        dates,
+        values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
+        labels: dates.map((d, i) => labelPoints.has(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
+        caption: `seit deinem Start am ${fmtDM(start)}`,
+      };
+    }
     if (trendRange === "week") {
-      const dates = weekDays(currentMonday).filter((d) => d <= today);
+      const dates = weekDays(currentMonday).filter((d) => d >= start && d <= today);
       return {
         dates,
         values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
@@ -212,24 +231,27 @@
       };
     }
     if (trendRange === "month") {
-      const dates = Array.from({ length: 30 }, (_, i) => addDays(reference, i - 29));
+      const dates = Array.from({ length: 30 }, (_, i) => addDays(reference, i - 29)).filter((d) => d >= start);
+      const labelPoints = new Set([0, Math.round((dates.length - 1) * .25), Math.round((dates.length - 1) * .5), Math.round((dates.length - 1) * .75), dates.length - 1]);
       return {
         dates,
         values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
-        labels: dates.map((d, i) => [0, 7, 14, 21, 29].includes(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
-        caption: "in den letzten 30 Tagen",
+        labels: dates.map((d, i) => labelPoints.has(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
+        caption: dates.length < 30 ? "seit deinem Start" : "in den letzten 30 Tagen",
       };
     }
-    const months = Array.from({ length: 12 }, (_, i) => new Date(reference.getFullYear(), reference.getMonth() - 11 + i, 1));
+    const months = Array.from({ length: 12 }, (_, i) => new Date(reference.getFullYear(), reference.getMonth() - 11 + i, 1))
+      .filter((month) => new Date(month.getFullYear(), month.getMonth() + 1, 0) >= start);
     const monthValues = months.map((start) => {
+      const monthStart = start < parseDate(state.settings.startDate) ? parseDate(state.settings.startDate) : start;
       const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
       const cappedEnd = end > today ? today : end;
-      if (start > cappedEnd) return 0;
-      const count = Math.floor((cappedEnd - start) / 864e5) + 1;
-      const values = Array.from({ length: count }, (_, i) => combinedDayPercent(dateStr(addDays(start, i))) || 0);
+      if (monthStart > cappedEnd) return 0;
+      const count = Math.floor((cappedEnd - monthStart) / 864e5) + 1;
+      const values = Array.from({ length: count }, (_, i) => combinedDayPercent(dateStr(addDays(monthStart, i))) || 0);
       return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
     });
-    const statStart = months[0];
+    const statStart = months[0] < start ? start : months[0];
     const monthEnd = new Date(reference.getFullYear(), reference.getMonth() + 1, 0);
     const statEnd = monthEnd > today ? today : monthEnd;
     const statDays = Math.floor((statEnd - statStart) / 864e5) + 1;
@@ -237,7 +259,7 @@
       dates: Array.from({ length: Math.max(1, statDays) }, (_, i) => addDays(statStart, i)),
       values: monthValues,
       labels: months.map((d) => MONTHS[d.getMonth()].slice(0, 3)),
-      caption: "im 12-Monats-Rückblick",
+      caption: months.length < 12 ? "seit deinem Start" : "im 12-Monats-Rückblick",
     };
   }
 
@@ -294,14 +316,21 @@
     $("#week-chart").innerHTML = buildChart();
     const labelIndexes = trendRange === "week" ? data.labels.map((_, i) => i) : data.labels.map((label, i) => label ? i : -1).filter((i) => i >= 0);
     $("#trend-axis").innerHTML = labelIndexes.map((i) => `<span style="left:${data.labels.length <= 1 ? 0 : (i / (data.labels.length - 1)) * 100}%">${data.labels[i]}</span>`).join("");
-    const summaryDate = parseDate(selectedDate || todayStr()) > parseDate(todayStr()) ? todayStr() : (selectedDate || todayStr());
+    const proposedSummaryDate = parseDate(selectedDate || todayStr()) > parseDate(todayStr()) ? todayStr() : (selectedDate || todayStr());
+    const summaryDate = proposedSummaryDate < state.settings.startDate ? state.settings.startDate : proposedSummaryDate;
     const summary = combinedCounts(summaryDate);
     $("#trend-summary").innerHTML = `
       <div class="trend-summary__item"><span>Tagesziele</span><strong>${summary.dailyDone}/${summary.dailyTotal}</strong></div>
       <div class="trend-summary__item"><span>Wochenziele</span><strong>${summary.weeklyDone}/${summary.weeklyTotal}</strong></div>
       <div class="trend-summary__item trend-summary__item--total"><span>Gesamt</span><strong>${summary.done}/${summary.total}</strong></div>`;
-    $("#consistency-range").textContent = trendRange === "week" ? "Diese Woche" : trendRange === "month" ? "30 Tage" : "12 Monate";
-    const validDates = data.dates.filter((d) => dateStr(d) <= todayStr());
+    $("#consistency-range").textContent = trendRange === "start"
+      ? "Seit Start"
+      : trendRange === "week"
+        ? "Diese Woche"
+        : trendRange === "month"
+          ? (data.dates.length < 30 ? "Seit Start" : "30 Tage")
+          : (data.labels.length < 12 ? "Seit Start" : "12 Monate");
+    const validDates = data.dates.filter((d) => dateStr(d) >= state.settings.startDate && dateStr(d) <= todayStr());
     $("#habit-stats").innerHTML = dailyHabits().map((habit) => {
       const done = validDates.filter((d) => isToggle(dateStr(d), habit.id)).length;
       const rate = validDates.length ? Math.round(done / validDates.length * 100) : 0;
@@ -333,12 +362,14 @@
       const ds = dateStr(d);
       const pct = dayPercent(ds);
       const future = ds > today;
+      const beforeStart = ds < state.settings.startDate;
       const cls = ["day-cell"];
       if (ds === selectedDate) cls.push("is-selected");
       if (ds === today) cls.push("is-today");
       if (future) cls.push("is-future");
+      if (beforeStart) cls.push("is-before-start");
       if (pct === 100) cls.push("is-full");
-      return `<button class="${cls.join(" ")}" data-date="${ds}" ${future ? "disabled" : ""}>
+      return `<button class="${cls.join(" ")}" data-date="${ds}" ${future || beforeStart ? "disabled" : ""}>
         <span class="day-cell__wd">${WD[(d.getDay() + 6) % 7]}</span>
         <span class="day-cell__num">${d.getDate()}</span>
         <span class="day-cell__bar"><i style="width:${pct == null ? 0 : pct}%"></i></span>
@@ -349,7 +380,7 @@
     // Tagespanel
     const sel = parseDate(selectedDate);
     const isTodaySel = selectedDate === today;
-    const locked = selectedDate > today;
+    const locked = selectedDate > today || selectedDate < state.settings.startDate;
     const pct = dayPercent(selectedDate);
     const { done, total } = dayCounts(selectedDate);
     $("#day-ring").innerHTML = ringSVG(pct) + `<span class="ring__label">${pct == null ? "–" : pct + "%"}</span>`;
@@ -380,8 +411,9 @@
           const ds = dateStr(d);
           const on = isToggle(ds, h.id);
           const fut = ds > today;
-          return `<button class="wd-cell ${on ? "is-done" : ""} ${fut ? "is-future" : ""}"
-            data-wd-habit="${h.id}" data-date="${ds}" ${fut ? "disabled" : ""}>${WD[i]}</button>`;
+          const beforeStart = ds < state.settings.startDate;
+          return `<button class="wd-cell ${on ? "is-done" : ""} ${fut ? "is-future" : ""} ${beforeStart ? "is-before-start" : ""}"
+            data-wd-habit="${h.id}" data-date="${ds}" ${fut || beforeStart ? "disabled" : ""}>${WD[i]}</button>`;
         }).join("");
         return `<div class="weekly-item">
           <div class="weekly-item__top">
@@ -903,9 +935,9 @@
       <div class="section-label">Darstellung</div>
       ${themeSeg(state.settings.theme)}
 
-      <div class="section-label">Start von Woche 1</div>
-      <input class="input" type="date" id="start-date" value="${state.settings.startMonday}">
-      <p style="font-size:12px;color:var(--text-dim);margin:6px 2px 0">Die Woche wird automatisch auf den Montag gelegt.</p>
+      <div class="section-label">Dein Startpunkt</div>
+      <input class="input" type="date" id="start-date" value="${state.settings.startDate}" max="${todayStr()}">
+      <p style="font-size:12px;color:var(--text-dim);margin:6px 2px 0">Die S-Auswertung beginnt genau an diesem Tag. Davor werden keine Tage gewertet.</p>
 
       <div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
         <span>Gewohnheiten</span>
@@ -918,7 +950,6 @@
         <button class="btn btn--ghost" id="export-data">Export</button>
         <button class="btn btn--ghost" id="import-data">Import</button>
       </div>
-      <button class="btn btn--danger" id="reset-data" style="margin-top:10px">Alles zurücksetzen</button>
       <p class="settings-version">Momentum ${APP_VERSION}</p>
       <input type="file" id="import-file" accept="application/json" hidden>
     `);
@@ -943,11 +974,14 @@
 
     sheet.querySelector("#start-date").addEventListener("change", (e) => {
       if (!e.target.value) return;
-      state.settings.startMonday = dateStr(mondayOf(parseDate(e.target.value)));
+      state.settings.startDate = e.target.value > todayStr() ? todayStr() : e.target.value;
+      state.settings.startMonday = dateStr(mondayOf(parseDate(state.settings.startDate)));
+      e.target.value = state.settings.startDate;
       save();
       currentMonday = dateStr(mondayOf(new Date()));
       if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
       selectedDate = defaultSelectedFor(currentMonday);
+      renderHabits();
       toast("Startdatum gesetzt");
     });
 
@@ -973,13 +1007,6 @@
     sheet.querySelector("#export-data").onclick = exportData;
     sheet.querySelector("#import-data").onclick = () => sheet.querySelector("#import-file").click();
     sheet.querySelector("#import-file").addEventListener("change", importData);
-    sheet.querySelector("#reset-data").onclick = () => {
-      if (confirm("Wirklich ALLE Daten löschen und neu starten?")) {
-        localStorage.removeItem(KEY); state = seedState(); save();
-        currentMonday = dateStr(mondayOf(new Date())); selectedDate = todayStr();
-        applyTheme(); closeSheet(); render(); toast("Zurückgesetzt");
-      }
-    };
   }
 
   function openHabitEditor(habit) {
@@ -1058,21 +1085,7 @@
       try {
         const s = JSON.parse(reader.result);
         if (!s || !Array.isArray(s.habits)) throw new Error("Ungültige Datei");
-        s.tasks = s.tasks || { short: [], long: [] };
-        s.tasks.short = s.tasks.short || [];
-        s.tasks.long = s.tasks.long || [];
-        s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
-        s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
-        s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
-        s.events = Array.isArray(s.events) ? s.events : [];
-        s.events.forEach((event) => {
-          event.startTime = event.startTime || event.time || "";
-          event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
-          delete event.time;
-        });
-        s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
-        if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
-        state = s; save(); applyTheme();
+        state = normalizeState(s); save(); applyTheme();
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
         selectedDate = defaultSelectedFor(currentMonday);
@@ -1086,9 +1099,10 @@
   function defaultSelectedFor(mondayStr) {
     const today = todayStr();
     const ds = weekDays(mondayStr).map(dateStr);
-    if (ds.includes(today)) return today;
-    if (ds[6] < today) return ds[6];
-    return ds[0];
+    const eligible = ds.filter((date) => date >= state.settings.startDate && date <= today);
+    if (eligible.includes(today)) return today;
+    if (eligible.length) return eligible[eligible.length - 1];
+    return state.settings.startDate;
   }
 
   /* ============================================================
@@ -1225,7 +1239,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=12").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=13").then((registration) => registration.update()).catch(() => {});
     }
   }
 
