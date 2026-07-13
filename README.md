@@ -18,11 +18,15 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 
 **Tasks**
 - Kurzfristige & langfristige Aufgaben, abhakbar und mit Fälligkeitsdatum
+- Frei benennbare Aufgaben-Blöcke und automatische Nummerierung
+- Aufgaben ohne Datum oder mit Kalenderdatum
+- Archivieren und Wiederherstellen erledigter Aufgaben
 
 **Kalender**
 - Moderne Monatsansicht mit Tagesagenda
 - Eigene Termine mit Datum, Uhrzeit und Notiz
 - Fällige Tasks erscheinen automatisch im Kalender
+- Aufgaben direkt für einen ausgewählten Kalendertag erstellen und bearbeiten
 - Termine und Tasks mit einem Tipp in Google Kalender übernehmen
 
 **Sonstiges**

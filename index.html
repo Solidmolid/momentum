@@ -6,7 +6,7 @@
 <meta name="description" content="Momentum – deine Gewohnheiten & Tasks an einem Ort." />
 
 <!-- PWA / iOS Home-Screen -->
-<meta name="theme-color" content="#090b14" />
+<meta name="theme-color" content="#f6f6f4" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=5" />
+<link rel="stylesheet" href="styles.css?v=7" />
 
 <div id="app">
   <!-- Top App Bar -->
@@ -34,11 +34,11 @@
   <main id="main">
     <!-- === SCREEN: GEWOHNHEITEN === -->
     <section id="screen-habits" class="screen">
-      <div class="welcome-card">
+      <div class="welcome-card overview-card">
         <div>
-          <span id="welcome-kicker" class="welcome-card__kicker">Guten Morgen</span>
-          <h1 id="welcome-title">Mach heute zu deinem Tag.</h1>
-          <p id="welcome-copy">Kleine Schritte. Sichtbarer Fortschritt.</p>
+          <span id="welcome-kicker" class="welcome-card__kicker">Übersicht</span>
+          <h1 id="welcome-title">Heute</h1>
+          <p id="welcome-copy">Dein aktueller Stand</p>
         </div>
         <div id="welcome-score" class="welcome-card__score">0%</div>
       </div>
@@ -107,46 +107,24 @@
 
     <!-- === SCREEN: TASKS === -->
     <section id="screen-tasks" class="screen" hidden>
-      <div class="card">
-        <div class="card__title">
-          <span>Kurzfristig</span>
-          <span id="short-count" class="pill">0</span>
-        </div>
-        <form class="addrow" data-list="short">
-          <div class="addrow__fields">
-            <input class="addrow__input" type="text" placeholder="Neue kurzfristige Aufgabe…" maxlength="140" />
-            <input class="addrow__date" type="date" aria-label="Fälligkeitsdatum" />
-          </div>
-          <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
-        </form>
-        <ul id="tasks-short" class="task-list"></ul>
+      <div class="task-toolbar">
+        <button id="add-task" class="btn btn--compact">＋ Neue Aufgabe</button>
+        <button id="add-task-section" class="btn btn--ghost btn--compact">＋ Block</button>
       </div>
-
-      <div class="card">
-        <div class="card__title">
-          <span>Langfristig</span>
-          <span id="long-count" class="pill">0</span>
-        </div>
-        <form class="addrow" data-list="long">
-          <div class="addrow__fields">
-            <input class="addrow__input" type="text" placeholder="Neue langfristige Aufgabe…" maxlength="140" />
-            <input class="addrow__date" type="date" aria-label="Fälligkeitsdatum" />
-          </div>
-          <button class="addrow__btn" type="submit" aria-label="Hinzufügen">＋</button>
-        </form>
-        <ul id="tasks-long" class="task-list"></ul>
+      <div id="task-sections" class="task-sections"></div>
+      <div class="card archive-card">
+        <button id="toggle-archive" class="archive-toggle">
+          <span>Archiv</span><span id="archive-count" class="pill">0</span>
+        </button>
+        <div id="archive-list" class="archive-list" hidden></div>
       </div>
     </section>
 
     <!-- === SCREEN: KALENDER === -->
     <section id="screen-calendar" class="screen" hidden>
-      <div class="calendar-hero">
-        <div>
-          <span class="calendar-hero__eyebrow">Deine Zeit im Blick</span>
-          <h2>Plane mit Ruhe.</h2>
-          <p>Termine und fällige Aufgaben an einem Ort.</p>
-        </div>
-        <button id="add-event" class="floating-add" aria-label="Neuen Termin hinzufügen">＋</button>
+      <div class="calendar-toolbar">
+        <button id="add-event" class="btn btn--compact">＋ Termin</button>
+        <button id="add-calendar-task" class="btn btn--ghost btn--compact">＋ Aufgabe</button>
       </div>
 
       <div class="card calendar-card">
@@ -164,7 +142,7 @@
       <div class="card agenda-card">
         <div class="card__title">
           <span id="agenda-title">Heute</span>
-          <button id="agenda-add" class="text-btn">＋ Termin</button>
+          <span class="agenda-actions"><button id="agenda-add-task" class="text-btn">＋ Aufgabe</button><button id="agenda-add" class="text-btn">＋ Termin</button></span>
         </div>
         <div id="agenda-list" class="agenda-list"></div>
       </div>
@@ -191,4 +169,4 @@
   <div id="modal-root"></div>
 </div>
 
-<script src="app.js?v=5" defer></script>
+<script src="app.js?v=7" defer></script>

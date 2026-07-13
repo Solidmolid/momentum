@@ -6,6 +6,7 @@
   "use strict";
 
   const KEY = "momentum_v1";
+  const APP_VERSION = "2.2";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -30,8 +31,8 @@
   function seedState() {
     const startMonday = dateStr(mondayOf(new Date()));
     return {
-      version: 1,
-      settings: { startMonday, theme: "auto" },
+      version: 3,
+      settings: { startMonday, theme: "light" },
       habits: [
         { id: uid(), emoji: "🌅", name: "Aufstehen um 5 Uhr", type: "daily", target: 1 },
         { id: uid(), emoji: "🏋️", name: "Gym", type: "weekly", target: 3 },
@@ -44,6 +45,8 @@
       ],
       log: {},
       tasks: { short: [], long: [] },
+      taskSections: [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }],
+      archivedTasks: [],
       events: [],
     };
   }
@@ -56,14 +59,18 @@
       if (!raw) return seedState();
       const s = JSON.parse(raw);
       // sanfte Migration / Absicherung
-      s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "auto" };
+      s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
+      if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
       s.habits = Array.isArray(s.habits) ? s.habits : [];
       s.log = s.log || {};
       s.tasks = s.tasks || { short: [], long: [] };
       s.tasks.short = s.tasks.short || [];
       s.tasks.long = s.tasks.long || [];
+      s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
+      s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
+      s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
       s.events = Array.isArray(s.events) ? s.events : [];
-      s.version = 2;
+      s.version = 3;
       return s;
     } catch (e) {
       console.warn("Konnte Daten nicht laden, starte neu.", e);
@@ -82,10 +89,20 @@
   let calendarMonth;
   let calendarSelected;
   let trendRange = "week";
+  let archiveExpanded = false;
 
   /* ---------- Berechnungen ---------- */
   const dailyHabits = () => state.habits.filter((h) => h.type === "daily");
   const weeklyHabits = () => state.habits.filter((h) => h.type === "weekly");
+  const allTasks = () => state.taskSections.flatMap((section) => (state.tasks[section.id] || []).map((task) => ({ ...task, sectionId: section.id })));
+  function findTask(id) {
+    for (const section of state.taskSections) {
+      const arr = state.tasks[section.id] || [];
+      const task = arr.find((item) => item.id === id);
+      if (task) return { task, section, arr };
+    }
+    return null;
+  }
 
   function dayPercent(ds) {
     const daily = dailyHabits();
@@ -251,13 +268,12 @@
     $("#week-prev").disabled = currentMonday <= earliestHistoryMonday();
 
     const today = todayStr();
-    const hour = new Date().getHours();
-    const greeting = hour < 11 ? "Guten Morgen" : hour < 17 ? "Hallo" : "Guten Abend";
     const todayPct = dayPercent(today) || 0;
-    const openTasks = [...state.tasks.short, ...state.tasks.long].filter((t) => !t.done).length;
-    $("#welcome-kicker").textContent = greeting;
-    $("#welcome-title").textContent = todayPct === 100 ? "Heute läuft es richtig gut." : "Mach heute zu deinem Tag.";
-    $("#welcome-copy").textContent = openTasks ? `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"} · bleib in deinem Rhythmus.` : "Kleine Schritte. Sichtbarer Fortschritt.";
+    const openTasks = allTasks().filter((task) => !task.done).length;
+    const todayCounts = dayCounts(today);
+    $("#welcome-kicker").textContent = "Übersicht";
+    $("#welcome-title").textContent = "Heute";
+    $("#welcome-copy").textContent = `${todayCounts.done}/${todayCounts.total} Gewohnheiten · ${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
     $("#welcome-score").textContent = todayPct + "%";
 
     // Tagesstreifen
@@ -337,25 +353,27 @@
 
   /* ---------- Rendern: Tasks ---------- */
   function renderTasks() {
-    ["short", "long"].forEach((listKey) => {
-      const arr = state.tasks[listKey];
-      const open = arr.filter((t) => !t.done).length;
-      $(`#${listKey}-count`).textContent = open;
-      const ul = $(`#tasks-${listKey}`);
-      const sorted = [...arr].sort((a, b) => {
-        if (a.done !== b.done) return a.done ? 1 : -1;
-        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-        return a.dueDate ? -1 : b.dueDate ? 1 : 0;
-      });
-      ul.innerHTML = sorted.length
-        ? sorted.map((t) => `<li class="task ${t.done ? "is-done" : ""}" data-list="${listKey}" data-id="${t.id}">
-            <span class="check task__check">${CHECK_SVG}</span>
-            <span class="task__content"><span class="task__text">${escapeHtml(t.text)}</span>${t.dueDate ? `<span class="task__date ${t.dueDate < todayStr() && !t.done ? "is-overdue" : ""}">${formatLongDate(t.dueDate)}</span>` : ""}</span>
-            ${t.dueDate ? `<a class="task__google" data-task-action="google" href="${escapeHtml(googleCalendarUrl({ title: t.text, date: t.dueDate, time: "", notes: "Momentum-Aufgabe" }))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>` : ""}
-            <button class="task__del" aria-label="Löschen">✕</button>
-          </li>`).join("")
-        : `<p class="empty-hint">Noch keine Aufgaben.</p>`;
-    });
+    const openTotal = allTasks().filter((task) => !task.done).length;
+    if (screen === "tasks") $("#appbar-sub").textContent = `${openTotal} offene ${openTotal === 1 ? "Aufgabe" : "Aufgaben"}`;
+    $("#task-sections").innerHTML = state.taskSections.map((section) => {
+      const arr = state.tasks[section.id] || [];
+      const open = arr.filter((task) => !task.done).length;
+      return `<section class="card task-section" data-section-id="${section.id}">
+        <div class="task-section__head"><div><h2>${escapeHtml(section.name)}</h2><span>${open} offen</span></div><button data-section-edit="${section.id}" aria-label="Block bearbeiten">•••</button></div>
+        <ol class="task-list">${arr.length ? arr.map((task, index) => `<li class="task ${task.done ? "is-done" : ""}" data-task-id="${task.id}">
+          <span class="task__number">${index + 1}</span>
+          <button class="check task__check" data-task-action="toggle" aria-label="${task.done ? "Als offen markieren" : "Als erledigt markieren"}">${CHECK_SVG}</button>
+          <button class="task__content" data-task-action="edit"><span class="task__text">${escapeHtml(task.text)}</span>${task.dueDate ? `<span class="task__date ${task.dueDate < todayStr() && !task.done ? "is-overdue" : ""}">${formatLongDate(task.dueDate)}</span>` : `<span class="task__date is-none">Ohne Datum</span>`}</button>
+          <button class="task__archive" data-task-action="archive" aria-label="Archivieren">↓</button>
+        </li>`).join("") : `<li class="task-empty">Noch keine Aufgaben</li>`}</ol>
+        <button class="section-add" data-add-to-section="${section.id}">＋ Aufgabe</button>
+      </section>`;
+    }).join("");
+
+    $("#archive-count").textContent = state.archivedTasks.length;
+    $("#archive-list").hidden = !archiveExpanded;
+    $("#toggle-archive").classList.toggle("is-open", archiveExpanded);
+    $("#archive-list").innerHTML = state.archivedTasks.length ? state.archivedTasks.map((task) => `<div class="archived-task" data-archived-id="${task.id}"><span>${escapeHtml(task.text)}</span><button data-restore-task="${task.id}">Wiederherstellen</button><button data-delete-archived="${task.id}" aria-label="Endgültig löschen">✕</button></div>`).join("") : `<p class="task-empty">Das Archiv ist leer</p>`;
   }
 
   function formatLongDate(ds) {
@@ -365,9 +383,9 @@
 
   function calendarItemsFor(ds) {
     const events = state.events.filter((event) => event.date === ds).map((event) => ({ ...event, kind: "event" }));
-    const tasks = [...state.tasks.short, ...state.tasks.long]
+    const tasks = allTasks()
       .filter((task) => task.dueDate === ds)
-      .map((task) => ({ id: task.id, title: task.text, date: task.dueDate, time: "", done: task.done, kind: "task" }));
+      .map((task) => ({ id: task.id, title: task.text, date: task.dueDate, time: "", done: task.done, sectionId: task.sectionId, kind: "task" }));
     return [...events, ...tasks].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
   }
 
@@ -375,6 +393,7 @@
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
     $("#month-today").textContent = `${MONTHS[month]} ${year}`;
+    if (screen === "calendar") $("#appbar-sub").textContent = `${MONTHS[month]} ${year}`;
 
     const first = new Date(year, month, 1);
     const offset = (first.getDay() + 6) % 7;
@@ -402,7 +421,7 @@
       if (item.kind === "task") {
         return `<div class="agenda-item is-task ${item.done ? "is-done" : ""}">
           <span class="agenda-item__time">Task</span><span class="agenda-item__line"></span>
-          <span class="agenda-item__content"><strong>${escapeHtml(item.title)}</strong><small>${item.done ? "Erledigt" : "Fällig"}</small></span>
+          <button class="agenda-item__content" data-edit-calendar-task="${item.id}"><strong>${escapeHtml(item.title)}</strong><small>${item.done ? "Erledigt" : "Fällig"}</small></button>
           <a class="agenda-item__google" href="${escapeHtml(googleCalendarUrl(item))}" target="_blank" rel="noopener" aria-label="In Google Kalender öffnen">G</a>
         </div>`;
       }
@@ -445,7 +464,8 @@
     const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender" };
     $("#appbar-title").textContent = titles[name];
     const wn = weekNumber(currentMonday);
-    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Dein Rückblick") : name === "calendar" ? "Plane deinen Rhythmus" : "Was als Nächstes zählt";
+    const openTasks = allTasks().filter((task) => !task.done).length;
+    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Rückblick") : name === "calendar" ? `${MONTHS[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}` : `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
     render();
     window.scrollTo({ top: 0 });
@@ -454,9 +474,10 @@
   /* ---------- Theme ---------- */
   function applyTheme() {
     const t = state.settings.theme;
-    if (t === "light") document.documentElement.dataset.theme = "light";
-    else if (t === "dark") document.documentElement.dataset.theme = "dark";
-    else delete document.documentElement.dataset.theme;
+    const dark = t === "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute("content", dark ? "#000000" : "#f6f6f4");
   }
 
   /* ---------- Helfer ---------- */
@@ -484,6 +505,73 @@
     return root.querySelector(".sheet");
   }
   function closeSheet() { $("#modal-root").innerHTML = ""; }
+
+  function archiveTask(id) {
+    const found = findTask(id); if (!found) return;
+    found.arr.splice(found.arr.indexOf(found.task), 1);
+    state.archivedTasks.unshift({ ...found.task, sectionId: found.section.id, archivedAt: Date.now() });
+    save(); renderTasks(); if (screen === "calendar") renderCalendar(); toast("Ins Archiv verschoben");
+  }
+
+  function openTaskEditor(task, prefillDate, preferredSectionId) {
+    const found = task ? findTask(task.id) : null;
+    const originalSectionId = found ? found.section.id : (preferredSectionId || state.taskSections[0].id);
+    const item = task || { id: uid(), text: "", dueDate: prefillDate || "", done: false, createdAt: Date.now() };
+    const sheet = openSheet(`
+      <div class="sheet__head"><div class="sheet__title">${task ? "Aufgabe bearbeiten" : "Neue Aufgabe"}</div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <div class="field"><label for="task-title">Aufgabe</label><input class="input" id="task-title" maxlength="140" value="${escapeHtml(item.text)}" placeholder="Was möchtest du erledigen?"></div>
+      <div class="field"><label for="task-section">Block</label><select class="select" id="task-section">${state.taskSections.map((section) => `<option value="${section.id}" ${section.id === originalSectionId ? "selected" : ""}>${escapeHtml(section.name)}</option>`).join("")}</select></div>
+      <div class="field"><label for="task-date">Datum (optional)</label><input class="input" id="task-date" type="date" value="${item.dueDate || ""}"><p class="field-hint">Ohne Datum bleibt die Aufgabe nur in der Taskliste. Mit Datum erscheint sie zusätzlich im Kalender.</p></div>
+      <button class="btn" id="task-save">${task ? "Speichern" : "Aufgabe hinzufügen"}</button>
+      ${task && item.dueDate ? `<a class="btn btn--google" href="${escapeHtml(googleCalendarUrl({ title: item.text, date: item.dueDate, time: "", notes: "Momentum-Aufgabe" }))}" target="_blank" rel="noopener">In Google Kalender öffnen</a>` : ""}
+      ${task ? `<div class="btn-row"><button class="btn btn--ghost" id="task-archive">Archivieren</button><button class="btn btn--danger" id="task-delete">Löschen</button></div>` : ""}
+    `);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#task-save").onclick = () => {
+      const text = sheet.querySelector("#task-title").value.trim();
+      if (!text) { toast("Bitte eine Aufgabe eingeben"); return; }
+      const sectionId = sheet.querySelector("#task-section").value;
+      item.text = text; item.dueDate = sheet.querySelector("#task-date").value || "";
+      if (!task) state.tasks[sectionId].push(item);
+      else if (sectionId !== originalSectionId) {
+        found.arr.splice(found.arr.indexOf(found.task), 1);
+        state.tasks[sectionId].push(item);
+      }
+      save(); closeSheet(); renderTasks(); if (screen === "calendar") renderCalendar(); toast(task ? "Aufgabe gespeichert" : "Aufgabe hinzugefügt");
+    };
+    const archive = sheet.querySelector("#task-archive");
+    if (archive) archive.onclick = () => { closeSheet(); archiveTask(item.id); };
+    const del = sheet.querySelector("#task-delete");
+    if (del) del.onclick = () => {
+      if (!confirm(`„${item.text}" wirklich löschen?`)) return;
+      found.arr.splice(found.arr.indexOf(found.task), 1); save(); closeSheet(); renderTasks(); if (screen === "calendar") renderCalendar(); toast("Aufgabe gelöscht");
+    };
+  }
+
+  function openSectionEditor(section) {
+    const sheet = openSheet(`
+      <div class="sheet__head"><div class="sheet__title">${section ? "Block bearbeiten" : "Neuer Block"}</div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <div class="field"><label for="section-name">Name</label><input class="input" id="section-name" maxlength="40" value="${escapeHtml(section ? section.name : "")}" placeholder="z. B. Arbeit, Privat oder Später"></div>
+      <button class="btn" id="section-save">${section ? "Speichern" : "Block hinzufügen"}</button>
+      ${section && state.taskSections.length > 1 ? `<button class="btn btn--danger" id="section-delete">Block löschen</button>` : ""}
+    `);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#section-save").onclick = () => {
+      const name = sheet.querySelector("#section-name").value.trim(); if (!name) return;
+      if (section) section.name = name;
+      else { const id = "list_" + uid(); state.taskSections.push({ id, name }); state.tasks[id] = []; }
+      save(); closeSheet(); renderTasks();
+    };
+    const del = sheet.querySelector("#section-delete");
+    if (del) del.onclick = () => {
+      if (!confirm(`Block „${section.name}" löschen? Die Aufgaben werden in den ersten anderen Block verschoben.`)) return;
+      const fallback = state.taskSections.find((item) => item.id !== section.id);
+      state.tasks[fallback.id].push(...(state.tasks[section.id] || []));
+      delete state.tasks[section.id];
+      state.taskSections = state.taskSections.filter((item) => item.id !== section.id);
+      save(); closeSheet(); renderTasks();
+    };
+  }
 
   function openEventEditor(event) {
     const isNew = !event;
@@ -528,7 +616,7 @@
 
   function openSettings() {
     const themeSeg = (val) => `<div class="seg" id="theme-seg">
-      ${[["auto", "Auto"], ["light", "Hell"], ["dark", "Dunkel"]]
+      ${[["light", "Hell"], ["dark", "Dunkel"]]
         .map(([k, l]) => `<button data-theme-val="${k}" class="${val === k ? "is-active" : ""}">${l}</button>`).join("")}
     </div>`;
 
@@ -570,6 +658,7 @@
         <button class="btn btn--ghost" id="import-data">Import</button>
       </div>
       <button class="btn btn--danger" id="reset-data" style="margin-top:10px">Alles zurücksetzen</button>
+      <p class="settings-version">Momentum ${APP_VERSION}</p>
       <input type="file" id="import-file" accept="application/json" hidden>
     `);
 
@@ -702,7 +791,12 @@
         s.tasks = s.tasks || { short: [], long: [] };
         s.tasks.short = s.tasks.short || [];
         s.tasks.long = s.tasks.long || [];
+        s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
+        s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
+        s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
         s.events = Array.isArray(s.events) ? s.events : [];
+        s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
+        if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
         state = s; save(); applyTheme();
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
@@ -774,31 +868,34 @@
       renderHabits();
     });
 
-    // Tasks hinzufügen
-    document.querySelectorAll(".addrow").forEach((form) => {
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const input = form.querySelector(".addrow__input");
-        const dateInput = form.querySelector(".addrow__date");
-        const text = input.value.trim(); if (!text) return;
-        state.tasks[form.dataset.list].unshift({ id: uid(), text, dueDate: dateInput.value || "", done: false, createdAt: Date.now() });
-        save(); input.value = ""; dateInput.value = ""; renderTasks();
-      });
+    // Tasks und frei benennbare Blöcke
+    $("#add-task").onclick = () => openTaskEditor(null, "", state.taskSections[0].id);
+    $("#add-task-section").onclick = () => openSectionEditor(null);
+    $("#task-sections").addEventListener("click", (e) => {
+      const sectionEdit = e.target.closest("[data-section-edit]");
+      const sectionAdd = e.target.closest("[data-add-to-section]");
+      const taskEl = e.target.closest("[data-task-id]");
+      if (sectionEdit) { openSectionEditor(state.taskSections.find((section) => section.id === sectionEdit.dataset.sectionEdit)); return; }
+      if (sectionAdd) { openTaskEditor(null, "", sectionAdd.dataset.addToSection); return; }
+      if (!taskEl) return;
+      const found = findTask(taskEl.dataset.taskId); if (!found) return;
+      const action = e.target.closest("[data-task-action]")?.dataset.taskAction;
+      if (action === "toggle") { found.task.done = !found.task.done; save(); renderTasks(); }
+      else if (action === "edit") openTaskEditor(found.task);
+      else if (action === "archive") archiveTask(found.task.id);
     });
-
-    // Task abhaken / löschen
-    document.querySelectorAll(".task-list").forEach((ul) => {
-      ul.addEventListener("click", (e) => {
-        const li = e.target.closest(".task"); if (!li) return;
-        const arr = state.tasks[li.dataset.list];
-        const t = arr.find((x) => x.id === li.dataset.id); if (!t) return;
-        if (e.target.closest("[data-task-action='google']")) return;
-        if (e.target.closest(".task__del")) {
-          const i = arr.indexOf(t); arr.splice(i, 1); save(); renderTasks();
-        } else {
-          t.done = !t.done; save(); renderTasks();
-        }
-      });
+    $("#toggle-archive").onclick = () => { archiveExpanded = !archiveExpanded; renderTasks(); };
+    $("#archive-list").addEventListener("click", (e) => {
+      const restore = e.target.closest("[data-restore-task]");
+      const remove = e.target.closest("[data-delete-archived]");
+      if (restore) {
+        const index = state.archivedTasks.findIndex((task) => task.id === restore.dataset.restoreTask); if (index < 0) return;
+        const task = state.archivedTasks.splice(index, 1)[0];
+        const sectionId = state.taskSections.some((section) => section.id === task.sectionId) ? task.sectionId : state.taskSections[0].id;
+        delete task.archivedAt; delete task.sectionId; state.tasks[sectionId].push(task); save(); renderTasks();
+      } else if (remove) {
+        state.archivedTasks = state.archivedTasks.filter((task) => task.id !== remove.dataset.deleteArchived); save(); renderTasks();
+      }
     });
 
     // Kalender
@@ -823,10 +920,14 @@
       renderCalendar();
     });
     $("#add-event").onclick = () => openEventEditor(null);
+    $("#add-calendar-task").onclick = () => openTaskEditor(null, calendarSelected, state.taskSections[0].id);
     $("#agenda-add").onclick = () => openEventEditor(null);
+    $("#agenda-add-task").onclick = () => openTaskEditor(null, calendarSelected, state.taskSections[0].id);
     $("#agenda-list").addEventListener("click", (e) => {
       const edit = e.target.closest("[data-edit-event]");
+      const editTask = e.target.closest("[data-edit-calendar-task]");
       if (edit) openEventEditor(state.events.find((event) => event.id === edit.dataset.editEvent));
+      else if (editTask) { const found = findTask(editTask.dataset.editCalendarTask); if (found) openTaskEditor(found.task); }
     });
   }
 
@@ -845,9 +946,15 @@
     bindEvents();
     switchScreen("habits");
 
-    // Service Worker (nur über http/https, nicht file://)
+    // Neue App-Versionen sofort übernehmen, auch bei installierter Home-Screen-App.
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("service-worker.js").catch(() => {});
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
+      navigator.serviceWorker.register("service-worker.js?v=7").then((registration) => registration.update()).catch(() => {});
     }
   }
 
