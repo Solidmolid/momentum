@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=3" />
+<link rel="stylesheet" href="styles.css?v=5" />
 
 <div id="app">
   <!-- Top App Bar -->
@@ -79,9 +79,29 @@
       </div>
 
       <!-- Wochen-Verlauf (Grafik) -->
-      <div class="card chart-card">
-        <div class="card__title">Wochen-Verlauf</div>
-        <div id="week-chart" class="chart"></div>
+      <div class="card chart-card trend-card">
+        <div class="trend-card__head">
+          <div>
+            <span class="trend-card__eyebrow">Dein Fortschritt</span>
+            <div id="trend-value" class="trend-card__value">0 %</div>
+            <div id="trend-caption" class="trend-card__caption">im Durchschnitt</div>
+          </div>
+          <div class="trend-range" id="trend-range" aria-label="Zeitraum auswählen">
+            <button data-range="week" class="is-active">W</button>
+            <button data-range="month">M</button>
+            <button data-range="year">J</button>
+          </div>
+        </div>
+        <div id="week-chart" class="chart trend-chart"></div>
+        <div id="trend-axis" class="trend-axis"></div>
+      </div>
+
+      <div class="card consistency-card">
+        <div class="card__title">
+          <span>Deine Durchzieh-Rate</span>
+          <span id="consistency-range" class="card__hint">Diese Woche</span>
+        </div>
+        <div id="habit-stats" class="habit-stats"></div>
       </div>
     </section>
 
@@ -171,4 +191,4 @@
   <div id="modal-root"></div>
 </div>
 
-<script src="app.js?v=3" defer></script>
+<script src="app.js?v=5" defer></script>

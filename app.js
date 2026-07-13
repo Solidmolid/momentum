@@ -81,6 +81,7 @@
   let screen = "habits";
   let calendarMonth;
   let calendarSelected;
+  let trendRange = "week";
 
   /* ---------- Berechnungen ---------- */
   const dailyHabits = () => state.habits.filter((h) => h.type === "daily");
@@ -105,6 +106,9 @@
     const start = parseDate(state.settings.startMonday);
     const cur = parseDate(mondayStr);
     return Math.floor((cur - start) / (7 * 864e5)) + 1;
+  }
+  function earliestHistoryMonday() {
+    return dateStr(mondayOf(addDays(new Date(), -370)));
   }
   function isToggle(ds, habitId) { return !!(state.log[ds] || {})[habitId]; }
   function setToggle(ds, habitId, val) {
@@ -131,62 +135,109 @@
     </svg>`;
   }
 
-  function buildChart(mondayStr) {
-    const daily = dailyHabits();
-    if (daily.length === 0)
-      return `<p class="empty-hint">Noch keine täglichen Gewohnheiten – füge oben welche hinzu.</p>`;
-
-    const W = 320, H = 150, padL = 28, padR = 12, padT = 12, padB = 24;
-    const innerW = W - padL - padR, innerH = H - padT - padB;
-    const today = todayStr();
-
-    const days = weekDays(mondayStr);
-    const X = (i) => padL + innerW * (i / 6);
-    const Y = (p) => padT + innerH * (1 - p / 100);
-
-    const pts = days.map((d, i) => {
-      const ds = dateStr(d);
-      return { i, x: X(i), pct: ds > today ? null : dayPercent(ds), isToday: ds === today };
-    });
-    const real = pts.filter((p) => p.pct != null);
-
-    // Gridlines + Y-Labels (0/50/100)
-    let grid = "";
-    [0, 50, 100].forEach((v) => {
-      const y = Y(v);
-      grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
-      grid += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="var(--text-dim)">${v}</text>`;
-    });
-
-    // Linie + Fläche
-    let path = "", area = "", dots = "";
-    if (real.length) {
-      path = real.map((p, k) => `${k ? "L" : "M"}${p.x.toFixed(1)},${Y(p.pct).toFixed(1)}`).join(" ");
-      area = `M${real[0].x.toFixed(1)},${(H - padB)} ` +
-        real.map((p) => `L${p.x.toFixed(1)},${Y(p.pct).toFixed(1)}`).join(" ") +
-        ` L${real[real.length - 1].x.toFixed(1)},${H - padB} Z`;
-      dots = real.map((p) =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${Y(p.pct).toFixed(1)}" r="${p.isToday ? 4.5 : 3}"
-          fill="${p.isToday ? "var(--accent)" : "var(--surface)"}" stroke="var(--accent)" stroke-width="2"/>`
-      ).join("");
+  function trendData() {
+    const today = parseDate(todayStr());
+    const selected = parseDate(selectedDate || todayStr());
+    const reference = selected > today ? today : selected;
+    if (trendRange === "week") {
+      const dates = weekDays(currentMonday).filter((d) => d <= today);
+      return {
+        dates,
+        values: dates.map((d) => dayPercent(dateStr(d)) || 0),
+        labels: dates.map((d) => WD[(d.getDay() + 6) % 7]),
+        caption: "in dieser Woche",
+      };
     }
+    if (trendRange === "month") {
+      const dates = Array.from({ length: 30 }, (_, i) => addDays(reference, i - 29));
+      return {
+        dates,
+        values: dates.map((d) => dayPercent(dateStr(d)) || 0),
+        labels: dates.map((d, i) => [0, 7, 14, 21, 29].includes(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
+        caption: "in den letzten 30 Tagen",
+      };
+    }
+    const months = Array.from({ length: 12 }, (_, i) => new Date(reference.getFullYear(), reference.getMonth() - 11 + i, 1));
+    const monthValues = months.map((start) => {
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+      const cappedEnd = end > today ? today : end;
+      if (start > cappedEnd) return 0;
+      const count = Math.floor((cappedEnd - start) / 864e5) + 1;
+      const values = Array.from({ length: count }, (_, i) => dayPercent(dateStr(addDays(start, i))) || 0);
+      return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+    });
+    const statStart = months[0];
+    const monthEnd = new Date(reference.getFullYear(), reference.getMonth() + 1, 0);
+    const statEnd = monthEnd > today ? today : monthEnd;
+    const statDays = Math.floor((statEnd - statStart) / 864e5) + 1;
+    return {
+      dates: Array.from({ length: Math.max(1, statDays) }, (_, i) => addDays(statStart, i)),
+      values: monthValues,
+      labels: months.map((d) => MONTHS[d.getMonth()].slice(0, 3)),
+      caption: "im 12-Monats-Rückblick",
+    };
+  }
 
-    // X-Labels
-    const labels = days.map((d, i) =>
-      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" font-weight="700"
-        fill="${dateStr(d) === today ? "var(--accent)" : "var(--text-muted)"}">${WD[i]}</text>`).join("");
+  function smoothPath(points) {
+    if (!points.length) return "";
+    if (points.length === 1) return `M${points[0].x},${points[0].y}`;
+    let path = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i - 1] || points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2] || p2;
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      path += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return path;
+  }
 
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-      <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="var(--accent)" stop-opacity="0.28"/>
-        <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
-      </linearGradient></defs>
-      ${grid}
-      ${area ? `<path d="${area}" fill="url(#areaGrad)"/>` : ""}
-      ${path ? `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>` : ""}
-      ${dots}
-      ${labels}
+  function buildChart() {
+    if (!dailyHabits().length) return `<p class="empty-hint">Noch keine täglichen Gewohnheiten.</p>`;
+    const data = trendData();
+    const W = 320, H = 154, padX = 7, padY = 13;
+    const denom = Math.max(1, data.values.length - 1);
+    const points = data.values.map((value, index) => ({
+      x: padX + (W - padX * 2) * (index / denom),
+      y: padY + (H - padY * 2) * (1 - value / 100),
+    }));
+    const path = smoothPath(points);
+    const base = H - padY;
+    const area = points.length ? `${path} L${points[points.length - 1].x.toFixed(1)},${base} L${points[0].x.toFixed(1)},${base} Z` : "";
+    const last = points[points.length - 1];
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Fortschrittsverlauf">
+      <defs>
+        <linearGradient id="trendArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".30"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient>
+        <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient>
+      </defs>
+      <line x1="${padX}" y1="${padY}" x2="${W - padX}" y2="${padY}" class="trend-gridline"/>
+      <line x1="${padX}" y1="${H / 2}" x2="${W - padX}" y2="${H / 2}" class="trend-gridline"/>
+      <line x1="${padX}" y1="${base}" x2="${W - padX}" y2="${base}" class="trend-gridline"/>
+      <path d="${area}" fill="url(#trendArea)"/>
+      <path d="${path}" fill="none" stroke="url(#trendStroke)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      ${last ? `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="5" fill="var(--surface)" stroke="var(--accent-2)" stroke-width="3"/>` : ""}
     </svg>`;
+  }
+
+  function renderTrend() {
+    const data = trendData();
+    const average = data.values.length ? Math.round(data.values.reduce((sum, value) => sum + value, 0) / data.values.length) : 0;
+    $("#trend-value").textContent = average + " %";
+    $("#trend-caption").textContent = data.caption;
+    $("#week-chart").innerHTML = buildChart();
+    const labelIndexes = trendRange === "week" ? data.labels.map((_, i) => i) : data.labels.map((label, i) => label ? i : -1).filter((i) => i >= 0);
+    $("#trend-axis").innerHTML = labelIndexes.map((i) => `<span style="left:${data.labels.length <= 1 ? 0 : (i / (data.labels.length - 1)) * 100}%">${data.labels[i]}</span>`).join("");
+    $("#consistency-range").textContent = trendRange === "week" ? "Diese Woche" : trendRange === "month" ? "30 Tage" : "12 Monate";
+    const validDates = data.dates.filter((d) => dateStr(d) <= todayStr());
+    $("#habit-stats").innerHTML = dailyHabits().map((habit) => {
+      const done = validDates.filter((d) => isToggle(dateStr(d), habit.id)).length;
+      const rate = validDates.length ? Math.round(done / validDates.length * 100) : 0;
+      return `<div class="habit-stat"><span class="habit-stat__emoji">${habit.emoji || "•"}</span><span class="habit-stat__main"><span><strong>${escapeHtml(habit.name)}</strong><b>${rate} %</b></span><i><em style="width:${rate}%"></em></i></span></div>`;
+    }).join("") || `<p class="empty-hint">Noch keine Gewohnheiten vorhanden.</p>`;
   }
 
   /* ---------- Rendern: Gewohnheiten ---------- */
@@ -195,9 +246,9 @@
   function renderHabits() {
     const wn = weekNumber(currentMonday);
     const days = weekDays(currentMonday);
-    $("#week-label").textContent = "Woche " + wn;
+    $("#week-label").textContent = wn > 0 ? "Woche " + wn : "Rückblick";
     $("#week-range").textContent = `${WD[0]} ${fmtDM(days[0])}–${WD[6]} ${fmtDM(days[6])}`;
-    $("#week-prev").disabled = wn <= 1;
+    $("#week-prev").disabled = currentMonday <= earliestHistoryMonday();
 
     const today = todayStr();
     const hour = new Date().getHours();
@@ -277,11 +328,11 @@
       wc.hidden = true;
     }
 
-    // Chart
-    $("#week-chart").innerHTML = buildChart(currentMonday);
+    // Analyse
+    renderTrend();
 
     // App-Bar Untertitel
-    $("#appbar-sub").textContent = "Woche " + wn;
+    $("#appbar-sub").textContent = wn > 0 ? "Woche " + wn : "Dein Rückblick";
   }
 
   /* ---------- Rendern: Tasks ---------- */
@@ -393,7 +444,8 @@
     $("#screen-calendar").hidden = name !== "calendar";
     const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender" };
     $("#appbar-title").textContent = titles[name];
-    $("#appbar-sub").textContent = name === "habits" ? "Woche " + weekNumber(currentMonday) : name === "calendar" ? "Plane deinen Rhythmus" : "Was als Nächstes zählt";
+    const wn = weekNumber(currentMonday);
+    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Dein Rückblick") : name === "calendar" ? "Plane deinen Rhythmus" : "Was als Nächstes zählt";
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
     render();
     window.scrollTo({ top: 0 });
@@ -685,7 +737,7 @@
     // Wochen-Navigation
     $("#week-prev").addEventListener("click", () => {
       const prev = dateStr(addDays(parseDate(currentMonday), -7));
-      if (parseDate(prev) < parseDate(state.settings.startMonday)) return;
+      if (prev < earliestHistoryMonday()) return;
       currentMonday = prev; selectedDate = defaultSelectedFor(currentMonday); renderHabits();
     });
     $("#week-next").addEventListener("click", () => {
@@ -697,6 +749,13 @@
     $("#day-strip").addEventListener("click", (e) => {
       const c = e.target.closest(".day-cell"); if (!c || c.disabled) return;
       selectedDate = c.dataset.date; renderHabits();
+    });
+
+    $("#trend-range").addEventListener("click", (e) => {
+      const button = e.target.closest("[data-range]"); if (!button) return;
+      trendRange = button.dataset.range;
+      $("#trend-range").querySelectorAll("button").forEach((item) => item.classList.toggle("is-active", item === button));
+      renderTrend();
     });
 
     // Tägliche Gewohnheit abhaken

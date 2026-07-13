@@ -12,6 +12,9 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Alle täglichen Gewohnheiten erledigt = **100 % an dem Tag**
 - **Wochenziele** wie „Gym 3×/Woche" mit eigenem Fortschritt
 - **Wochen-Verlauf-Grafik** über die 7 Tage (0–100 %)
+- Geschwungene Fortschrittsanalyse für Woche, 30 Tage und 12 Monate
+- Persönliche Durchzieh-Rate für jede tägliche Gewohnheit
+- Rückwirkendes Eintragen bis zu einem Jahr
 
 **Tasks**
 - Kurzfristige & langfristige Aufgaben, abhakbar und mit Fälligkeitsdatum
