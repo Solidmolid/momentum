@@ -6,7 +6,7 @@
   "use strict";
 
   const KEY = "momentum_v1";
-  const APP_VERSION = "2.2.1";
+  const APP_VERSION = "2.3";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -119,6 +119,24 @@
   function weeklyDone(habit, mondayStr) {
     return weekDays(mondayStr).filter((d) => (state.log[dateStr(d)] || {})[habit.id]).length;
   }
+  function combinedCounts(ds) {
+    const daily = dayCounts(ds);
+    const mondayStr = dateStr(mondayOf(parseDate(ds)));
+    const weekly = weeklyHabits();
+    const weeklyDoneCount = weekly.filter((habit) => weeklyDone(habit, mondayStr) >= habit.target).length;
+    return {
+      dailyDone: daily.done,
+      dailyTotal: daily.total,
+      weeklyDone: weeklyDoneCount,
+      weeklyTotal: weekly.length,
+      done: daily.done + weeklyDoneCount,
+      total: daily.total + weekly.length,
+    };
+  }
+  function combinedDayPercent(ds) {
+    const counts = combinedCounts(ds);
+    return counts.total ? Math.round((counts.done / counts.total) * 100) : null;
+  }
   function weekNumber(mondayStr) {
     const start = parseDate(state.settings.startMonday);
     const cur = parseDate(mondayStr);
@@ -160,7 +178,7 @@
       const dates = weekDays(currentMonday).filter((d) => d <= today);
       return {
         dates,
-        values: dates.map((d) => dayPercent(dateStr(d)) || 0),
+        values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
         labels: dates.map((d) => WD[(d.getDay() + 6) % 7]),
         caption: "in dieser Woche",
       };
@@ -169,7 +187,7 @@
       const dates = Array.from({ length: 30 }, (_, i) => addDays(reference, i - 29));
       return {
         dates,
-        values: dates.map((d) => dayPercent(dateStr(d)) || 0),
+        values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
         labels: dates.map((d, i) => [0, 7, 14, 21, 29].includes(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
         caption: "in den letzten 30 Tagen",
       };
@@ -180,7 +198,7 @@
       const cappedEnd = end > today ? today : end;
       if (start > cappedEnd) return 0;
       const count = Math.floor((cappedEnd - start) / 864e5) + 1;
-      const values = Array.from({ length: count }, (_, i) => dayPercent(dateStr(addDays(start, i))) || 0);
+      const values = Array.from({ length: count }, (_, i) => combinedDayPercent(dateStr(addDays(start, i))) || 0);
       return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
     });
     const statStart = months[0];
@@ -214,7 +232,7 @@
   }
 
   function buildChart() {
-    if (!dailyHabits().length) return `<p class="empty-hint">Noch keine täglichen Gewohnheiten.</p>`;
+    if (!dailyHabits().length && !weeklyHabits().length) return `<p class="empty-hint">Noch keine Gewohnheiten.</p>`;
     const data = trendData();
     const W = 320, H = 154, padX = 7, padY = 13;
     const denom = Math.max(1, data.values.length - 1);
@@ -248,6 +266,12 @@
     $("#week-chart").innerHTML = buildChart();
     const labelIndexes = trendRange === "week" ? data.labels.map((_, i) => i) : data.labels.map((label, i) => label ? i : -1).filter((i) => i >= 0);
     $("#trend-axis").innerHTML = labelIndexes.map((i) => `<span style="left:${data.labels.length <= 1 ? 0 : (i / (data.labels.length - 1)) * 100}%">${data.labels[i]}</span>`).join("");
+    const summaryDate = parseDate(selectedDate || todayStr()) > parseDate(todayStr()) ? todayStr() : (selectedDate || todayStr());
+    const summary = combinedCounts(summaryDate);
+    $("#trend-summary").innerHTML = `
+      <div class="trend-summary__item"><span>Tagesziele</span><strong>${summary.dailyDone}/${summary.dailyTotal}</strong></div>
+      <div class="trend-summary__item"><span>Wochenziele</span><strong>${summary.weeklyDone}/${summary.weeklyTotal}</strong></div>
+      <div class="trend-summary__item trend-summary__item--total"><span>Gesamt</span><strong>${summary.done}/${summary.total}</strong></div>`;
     $("#consistency-range").textContent = trendRange === "week" ? "Diese Woche" : trendRange === "month" ? "30 Tage" : "12 Monate";
     const validDates = data.dates.filter((d) => dateStr(d) <= todayStr());
     $("#habit-stats").innerHTML = dailyHabits().map((habit) => {
@@ -954,7 +978,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=8").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=9").then((registration) => registration.update()).catch(() => {});
     }
   }
 

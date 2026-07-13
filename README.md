@@ -13,6 +13,7 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - **Wochenziele** wie „Gym 3×/Woche" mit eigenem Fortschritt
 - **Wochen-Verlauf-Grafik** über die 7 Tage (0–100 %)
 - Geschwungene Fortschrittsanalyse für Woche, 30 Tage und 12 Monate
+- Gemeinsame Gewichtung von Tages- und Wochenzielen mit klarer Gesamtquote
 - Persönliche Durchzieh-Rate für jede tägliche Gewohnheit
 - Rückwirkendes Eintragen bis zu einem Jahr
 
