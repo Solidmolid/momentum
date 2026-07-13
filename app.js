@@ -6,7 +6,8 @@
   "use strict";
 
   const KEY = "momentum_v1";
-  const APP_VERSION = "2.4";
+  const LEGACY_OWNER_KEY = "momentum_legacy_owner";
+  const APP_VERSION = "3.0";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -58,37 +59,48 @@
 
   /* ---------- State laden / speichern ---------- */
   let state;
+  function normalizeState(s) {
+    s = s && typeof s === "object" ? s : seedState();
+    s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
+    if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
+    s.habits = Array.isArray(s.habits) ? s.habits : [];
+    s.log = s.log || {};
+    s.tasks = s.tasks || { short: [], long: [] };
+    s.tasks.short = s.tasks.short || [];
+    s.tasks.long = s.tasks.long || [];
+    s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
+    s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
+    s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
+    s.events = Array.isArray(s.events) ? s.events : [];
+    s.events.forEach((event) => {
+      event.startTime = event.startTime || event.time || "";
+      event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
+      delete event.time;
+    });
+    s.version = 3;
+    return s;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return seedState();
-      const s = JSON.parse(raw);
-      // sanfte Migration / Absicherung
-      s.settings = s.settings || { startMonday: dateStr(mondayOf(new Date())), theme: "light" };
-      if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
-      s.habits = Array.isArray(s.habits) ? s.habits : [];
-      s.log = s.log || {};
-      s.tasks = s.tasks || { short: [], long: [] };
-      s.tasks.short = s.tasks.short || [];
-      s.tasks.long = s.tasks.long || [];
-      s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
-      s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
-      s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
-      s.events = Array.isArray(s.events) ? s.events : [];
-      s.events.forEach((event) => {
-        event.startTime = event.startTime || event.time || "";
-        event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
-        delete event.time;
-      });
-      s.version = 3;
-      return s;
+      return raw ? normalizeState(JSON.parse(raw)) : seedState();
     } catch (e) {
       console.warn("Konnte Daten nicht laden, starte neu.", e);
       return seedState();
     }
   }
+  const userStorageKey = (userId) => `${KEY}_user_${userId}`;
+  function loadUserLocal(userId) {
+    try {
+      const raw = localStorage.getItem(userStorageKey(userId));
+      return raw ? normalizeState(JSON.parse(raw)) : null;
+    } catch (_error) { return null; }
+  }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); }
+    try {
+      localStorage.setItem(cloudUser ? userStorageKey(cloudUser.id) : KEY, JSON.stringify(state));
+      scheduleCloudSave();
+    }
     catch (e) { console.error("Speichern fehlgeschlagen", e); }
   }
 
@@ -100,6 +112,12 @@
   let calendarSelected;
   let trendRange = "week";
   let archiveExpanded = false;
+  let cloudUser = null;
+  let cloudProfile = null;
+  let cloudIsAdmin = false;
+  let cloudSyncTimer = null;
+  let cloudSyncLabel = "Noch nicht synchronisiert";
+  let activatingUserId = null;
 
   /* ---------- Berechnungen ---------- */
   const dailyHabits = () => state.habits.filter((h) => h.type === "daily");
@@ -505,6 +523,194 @@
     window.scrollTo({ top: 0 });
   }
 
+  /* ---------- Konto & Cloud ---------- */
+  let authMode = "login";
+
+  function setCloudStatus(label) {
+    cloudSyncLabel = label;
+    const el = document.querySelector("#sync-state");
+    if (el) el.textContent = label;
+  }
+
+  function scheduleCloudSave() {
+    if (!cloudUser || !window.MomentumCloud?.available) return;
+    setCloudStatus("Änderungen werden gespeichert …");
+    clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = setTimeout(flushCloudState, 650);
+  }
+
+  async function flushCloudState() {
+    if (!cloudUser || !window.MomentumCloud?.available) return;
+    clearTimeout(cloudSyncTimer);
+    try {
+      setCloudStatus("Synchronisiert …");
+      await window.MomentumCloud.saveState(cloudUser.id, state);
+      setCloudStatus(`Synchronisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+    } catch (error) {
+      console.warn("Cloud-Synchronisierung pausiert", error);
+      setCloudStatus(navigator.onLine ? "Synchronisierung fehlgeschlagen – neuer Versuch folgt" : "Offline – wird später synchronisiert");
+      if (navigator.onLine) cloudSyncTimer = setTimeout(flushCloudState, 5000);
+    }
+  }
+
+  function resetViewState() {
+    applyTheme();
+    currentMonday = dateStr(mondayOf(new Date()));
+    if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
+    selectedDate = defaultSelectedFor(currentMonday);
+    const now = new Date();
+    calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    calendarSelected = todayStr();
+  }
+
+  function setAuthMessage(message, isError) {
+    const el = $("#auth-message");
+    el.textContent = message || "";
+    el.classList.toggle("is-error", !!isError);
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const registering = mode === "register";
+    $("#auth-name-field").hidden = !registering;
+    $("#auth-title").textContent = registering ? "Konto erstellen" : "Willkommen zurück";
+    $("#auth-copy").textContent = registering ? "Deine Daten werden sicher getrennt und auf deinen Geräten synchronisiert." : "Melde dich an, damit dein Stand auf allen Geräten gleich bleibt.";
+    $("#auth-submit").textContent = registering ? "Konto erstellen" : "Anmelden";
+    $("#auth-forgot").hidden = registering;
+    $("#auth-password").setAttribute("autocomplete", registering ? "new-password" : "current-password");
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => button.classList.toggle("is-active", button.dataset.authMode === mode));
+    setAuthMessage("");
+  }
+
+  function showAuth(message, isError) {
+    $("#app").hidden = true;
+    $("#auth-screen").hidden = false;
+    setAuthMessage(message || "", isError);
+  }
+
+  function showApp() {
+    $("#auth-screen").hidden = true;
+    $("#app").hidden = false;
+  }
+
+  function friendlyAuthError(error) {
+    const message = String(error?.message || error || "Unbekannter Fehler");
+    if (/invalid login credentials/i.test(message)) return "E-Mail oder Passwort stimmt nicht.";
+    if (/already registered|already been registered/i.test(message)) return "Für diese E-Mail gibt es bereits ein Konto.";
+    if (/password/i.test(message) && /least|short|characters/i.test(message)) return "Das Passwort muss mindestens 8 Zeichen lang sein.";
+    if (/email/i.test(message) && /invalid/i.test(message)) return "Bitte gib eine gültige E-Mail-Adresse ein.";
+    return message;
+  }
+
+  async function activateSession(user) {
+    if (!user || activatingUserId === user.id) return;
+    activatingUserId = user.id;
+    showAuth("Dein Stand wird geladen …");
+    try {
+      const remote = await window.MomentumCloud.loadState(user.id);
+      if (remote?.state && Object.keys(remote.state).length) {
+        state = normalizeState(remote.state);
+      } else {
+        const accountLocal = loadUserLocal(user.id);
+        const legacyOwner = localStorage.getItem(LEGACY_OWNER_KEY);
+        if (accountLocal) state = accountLocal;
+        else if (legacyOwner && legacyOwner !== user.id) state = seedState();
+        await window.MomentumCloud.saveState(user.id, state);
+      }
+      cloudUser = user;
+      localStorage.setItem(userStorageKey(user.id), JSON.stringify(state));
+      if (!localStorage.getItem(LEGACY_OWNER_KEY)) localStorage.setItem(LEGACY_OWNER_KEY, user.id);
+      cloudProfile = await window.MomentumCloud.touchProfile(user.id);
+      if (cloudProfile.status === "blocked") throw new Error("Dieses Konto ist gesperrt.");
+      cloudIsAdmin = await window.MomentumCloud.isAdmin();
+      setCloudStatus("Synchronisiert");
+      resetViewState();
+      showApp();
+      switchScreen("habits");
+    } catch (error) {
+      console.error("Konto konnte nicht geladen werden", error);
+      cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
+      showAuth(friendlyAuthError(error), true);
+    } finally {
+      activatingUserId = null;
+    }
+  }
+
+  function bindAuthEvents() {
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+      button.onclick = () => setAuthMode(button.dataset.authMode);
+    });
+    $("#auth-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = $("#auth-email").value.trim().toLowerCase();
+      const password = $("#auth-password").value;
+      const displayName = $("#auth-name").value.trim();
+      if (authMode === "register" && !displayName) { setAuthMessage("Bitte gib einen Anzeigenamen ein.", true); return; }
+      $("#auth-submit").disabled = true;
+      setAuthMessage(authMode === "register" ? "Konto wird erstellt …" : "Anmeldung läuft …");
+      try {
+        if (authMode === "register") {
+          const result = await window.MomentumCloud.signUp(email, password, displayName);
+          if (result.session) await activateSession(result.user);
+          else setAuthMessage("Fast fertig: Bitte bestätige die E-Mail von Supabase und melde dich danach an.");
+        } else {
+          const result = await window.MomentumCloud.signIn(email, password);
+          await activateSession(result.user);
+        }
+      } catch (error) {
+        setAuthMessage(friendlyAuthError(error), true);
+      } finally {
+        $("#auth-submit").disabled = false;
+      }
+    });
+    $("#auth-forgot").onclick = async () => {
+      const email = $("#auth-email").value.trim().toLowerCase();
+      if (!email) { setAuthMessage("Trage zuerst deine E-Mail-Adresse ein.", true); return; }
+      try {
+        await window.MomentumCloud.sendPasswordReset(email);
+        setAuthMessage("Die E-Mail zum Zurücksetzen wurde verschickt.");
+      } catch (error) { setAuthMessage(friendlyAuthError(error), true); }
+    };
+  }
+
+  async function initCloud() {
+    if (!window.MomentumCloud?.available) {
+      showAuth(window.MomentumCloud?.error || "Die Cloud-Verbindung ist gerade nicht erreichbar.", true);
+      return;
+    }
+    window.MomentumCloud.onAuthChange((session) => {
+      if (!session) {
+        cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
+        showAuth();
+      } else if (cloudUser?.id !== session.user.id) activateSession(session.user);
+    });
+    try {
+      const session = await window.MomentumCloud.session();
+      if (session) await activateSession(session.user);
+      else showAuth();
+    } catch (error) { showAuth(friendlyAuthError(error), true); }
+  }
+
+  async function openAdminUsers() {
+    if (!cloudIsAdmin) return;
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">Admin</span><div class="sheet__title">Benutzerkonten</div></div><button class="sheet__close" data-close>Fertig</button></div>
+      <div id="admin-list" class="admin-list"><p class="admin-empty">Konten werden geladen …</p></div>`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    try {
+      const profiles = await window.MomentumCloud.listProfiles();
+      sheet.querySelector("#admin-list").innerHTML = profiles.length ? profiles.map((profile) => `
+        <div class="admin-user">
+          <div class="admin-user__top"><strong>${escapeHtml(profile.display_name)}</strong><span class="admin-user__status">${profile.status === "active" ? "Aktiv" : "Gesperrt"}</span></div>
+          <small>${escapeHtml(profile.email)}</small>
+          <small>Registriert: ${new Date(profile.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
+          <small>Letzte Aktivität: ${new Date(profile.last_seen_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
+        </div>`).join("") : `<p class="admin-empty">Noch keine Konten vorhanden.</p>`;
+    } catch (error) {
+      sheet.querySelector("#admin-list").innerHTML = `<p class="admin-empty">Konten konnten nicht geladen werden.</p>`;
+    }
+  }
+
   /* ---------- Theme ---------- */
   function applyTheme() {
     const t = state.settings.theme;
@@ -657,6 +863,9 @@
   }
 
   function openSettings() {
+    const accountName = cloudProfile?.display_name || cloudUser?.email?.split("@")[0] || "Konto";
+    const accountEmail = cloudProfile?.email || cloudUser?.email || "";
+    const accountInitial = accountName.trim().charAt(0).toUpperCase() || "M";
     const themeSeg = (val) => `<div class="seg" id="theme-seg">
       ${[["light", "Hell"], ["dark", "Dunkel"]]
         .map(([k, l]) => `<button data-theme-val="${k}" class="${val === k ? "is-active" : ""}">${l}</button>`).join("")}
@@ -679,6 +888,16 @@
       <div class="sheet__head">
         <div class="sheet__title">Einstellungen</div>
         <button class="sheet__close" data-close>Fertig</button>
+      </div>
+
+      <div class="section-label">Konto</div>
+      <div class="account-card">
+        <div class="account-card__top"><span class="account-avatar">${escapeHtml(accountInitial)}</span><span class="account-card__text"><strong>${escapeHtml(accountName)}</strong><small>${escapeHtml(accountEmail)}</small></span></div>
+        <div class="sync-state" id="sync-state">${escapeHtml(cloudSyncLabel)}</div>
+        <div class="account-actions">
+          ${cloudIsAdmin ? '<button class="btn btn--ghost" id="account-admin">Benutzer</button>' : '<span></span>'}
+          <button class="btn btn--ghost" id="account-logout">Abmelden</button>
+        </div>
       </div>
 
       <div class="section-label">Darstellung</div>
@@ -706,6 +925,15 @@
 
     // Events
     sheet.querySelector("[data-close]").onclick = closeSheet;
+    const adminButton = sheet.querySelector("#account-admin");
+    if (adminButton) adminButton.onclick = openAdminUsers;
+    sheet.querySelector("#account-logout").onclick = async () => {
+      await flushCloudState();
+      closeSheet();
+      await window.MomentumCloud.signOut();
+      cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
+      showAuth("Du bist abgemeldet.");
+    };
 
     sheet.querySelector("#theme-seg").addEventListener("click", (e) => {
       const b = e.target.closest("[data-theme-val]"); if (!b) return;
@@ -983,15 +1211,11 @@
      ============================================================ */
   function init() {
     state = load();
-    applyTheme();
-    currentMonday = dateStr(mondayOf(new Date()));
-    if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
-    selectedDate = defaultSelectedFor(currentMonday);
-    const now = new Date();
-    calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    calendarSelected = todayStr();
+    resetViewState();
+    bindAuthEvents();
     bindEvents();
-    switchScreen("habits");
+    initCloud();
+    window.addEventListener("online", flushCloudState);
 
     // Neue App-Versionen sofort übernehmen, auch bei installierter Home-Screen-App.
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -1001,7 +1225,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=10").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=12").then((registration) => registration.update()).catch(() => {});
     }
   }
 

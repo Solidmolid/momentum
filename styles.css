@@ -607,3 +607,37 @@ button.task__content { border: 0; background: transparent; color: var(--text); t
 }
 
 [hidden] { display: none !important; }
+
+/* ---------- Accounts & Cloud ---------- */
+.auth-screen { position: fixed; inset: 0; z-index: 100; min-height: 100dvh; overflow: auto; padding: max(28px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom)); display: grid; place-items: center; background: var(--bg); color: var(--text); }
+.auth-card { width: min(100%, 420px); padding: 28px 24px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.auth-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 34px; font-size: 21px; font-weight: 850; letter-spacing: -.03em; }
+.auth-eyebrow { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.auth-card h1 { margin: 0; font-size: 30px; letter-spacing: -.04em; }
+.auth-card > p { margin: 8px 0 22px; color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 20px; padding: 3px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.auth-tabs button { min-height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 750; }
+.auth-tabs button.is-active { background: var(--text); color: var(--bg); }
+.auth-form { display: flex; flex-direction: column; gap: 13px; }
+.auth-form .field { margin: 0; }
+.auth-submit { margin-top: 4px; }
+.auth-forgot { align-self: center; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.auth-message { min-height: 18px; margin: 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; text-align: center; }
+.auth-message.is-error { color: var(--danger); }
+.account-card { padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); }
+.account-card__top { display: flex; align-items: center; gap: 11px; }
+.account-avatar { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--text); color: var(--bg); font-weight: 850; }
+.account-card__text { min-width: 0; flex: 1; }
+.account-card__text strong, .account-card__text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-card__text strong { font-size: 14px; }
+.account-card__text small { margin-top: 2px; color: var(--text-muted); font-size: 11.5px; }
+.sync-state { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px; }
+.account-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.account-actions .btn { min-height: 40px; padding: 9px 10px; font-size: 12px; }
+.admin-list { display: flex; flex-direction: column; gap: 8px; }
+.admin-user { padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-2); }
+.admin-user__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.admin-user strong { font-size: 14px; }
+.admin-user__status { padding: 3px 7px; border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: 10px; font-weight: 750; }
+.admin-user small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.admin-empty { padding: 24px 12px; color: var(--text-muted); text-align: center; }

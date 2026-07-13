@@ -31,15 +31,23 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Termine und Tasks mit einem Tipp in Google Kalender übernehmen
 
 **Sonstiges**
-- Hell/Dunkel/Automatisch
+- Benutzerkonten mit E-Mail und Passwort
+- Automatische Synchronisierung zwischen Handy, Laptop und PC
+- Strikt getrennte Cloud- und Offline-Daten pro Benutzer
+- Admin-Übersicht für registrierte Konten
+- Hell/Dunkel
 - Läuft offline (PWA) & „Zum Home-Bildschirm hinzufügen"
 - Daten-Export/-Import als Backup
 
 ## Wichtig: Wo liegen die Daten?
 
-Die Daten werden **lokal im Browser** gespeichert (localStorage) – nur auf dem
-Gerät, auf dem du die App benutzt. Kein Login, keine Cloud (in Version 1).
-➡️ Über **Einstellungen → Daten → Export** kannst du jederzeit ein Backup sichern.
+Angemeldete Benutzer speichern ihren App-Stand verschlüsselt über **Supabase** in
+einem eigenen, per Row Level Security geschützten Datensatz. Zusätzlich bleibt
+eine Offline-Kopie auf dem jeweiligen Gerät erhalten. Beim ersten Login wird ein
+vorhandener lokaler Stand automatisch in das eigene Cloud-Konto übernommen.
+Über **Einstellungen → Daten → Export** kann weiterhin ein Backup gesichert werden.
+
+Die Datenbankstruktur und Zugriffsregeln liegen in `supabase/schema.sql`.
 
 ## Auf dem iPhone installieren
 

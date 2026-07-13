@@ -16,9 +16,41 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=10" />
+<link rel="stylesheet" href="styles.css?v=12" />
 
-<div id="app">
+<section id="auth-screen" class="auth-screen" aria-live="polite">
+  <div class="auth-card">
+    <div class="auth-brand"><span class="brand-mark">M</span><span>Momentum</span></div>
+    <span class="auth-eyebrow">Dein persönlicher Bereich</span>
+    <h1 id="auth-title">Willkommen zurück</h1>
+    <p id="auth-copy">Melde dich an, damit dein Stand auf allen Geräten gleich bleibt.</p>
+
+    <div class="auth-tabs" aria-label="Anmelden oder registrieren">
+      <button type="button" data-auth-mode="login" class="is-active">Anmelden</button>
+      <button type="button" data-auth-mode="register">Registrieren</button>
+    </div>
+
+    <form id="auth-form" class="auth-form">
+      <div id="auth-name-field" class="field" hidden>
+        <label for="auth-name">Anzeigename</label>
+        <input class="input" id="auth-name" maxlength="60" autocomplete="name" placeholder="z. B. Greta">
+      </div>
+      <div class="field">
+        <label for="auth-email">E-Mail</label>
+        <input class="input" id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="name@beispiel.de">
+      </div>
+      <div class="field">
+        <label for="auth-password">Passwort</label>
+        <input class="input" id="auth-password" type="password" minlength="8" autocomplete="current-password" required placeholder="Mindestens 8 Zeichen">
+      </div>
+      <button class="btn auth-submit" id="auth-submit" type="submit">Anmelden</button>
+      <button class="auth-forgot" id="auth-forgot" type="button">Passwort vergessen?</button>
+      <p id="auth-message" class="auth-message" role="status"></p>
+    </form>
+  </div>
+</section>
+
+<div id="app" hidden>
   <!-- Top App Bar -->
   <header class="appbar">
     <div class="appbar__title">
@@ -170,4 +202,6 @@
   <div id="modal-root"></div>
 </div>
 
-<script src="app.js?v=10" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="cloud.js?v=2" defer></script>
+<script src="app.js?v=12" defer></script>
