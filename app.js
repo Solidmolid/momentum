@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "3.1";
+  const APP_VERSION = "3.2";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const CHECK_SVG =
@@ -725,22 +725,49 @@
 
   async function openAdminUsers() {
     if (!cloudIsAdmin) return;
+    let refreshTimer = null;
     const sheet = openSheet(`
       <div class="sheet__head"><div><span class="sheet__eyebrow">Admin</span><div class="sheet__title">Benutzerkonten</div></div><button class="sheet__close" data-close>Fertig</button></div>
+      <div class="admin-toolbar"><span id="admin-count">Konten werden geladen …</span><button class="text-btn" id="admin-refresh">↻ Aktualisieren</button></div>
       <div id="admin-list" class="admin-list"><p class="admin-empty">Konten werden geladen …</p></div>`);
-    sheet.querySelector("[data-close]").onclick = closeSheet;
-    try {
-      const profiles = await window.MomentumCloud.listProfiles();
-      sheet.querySelector("#admin-list").innerHTML = profiles.length ? profiles.map((profile) => `
-        <div class="admin-user">
-          <div class="admin-user__top"><strong>${escapeHtml(profile.display_name)}</strong><span class="admin-user__status">${profile.status === "active" ? "Aktiv" : "Gesperrt"}</span></div>
-          <small>${escapeHtml(profile.email)}</small>
-          <small>Registriert: ${new Date(profile.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
-          <small>Letzte Aktivität: ${new Date(profile.last_seen_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
-        </div>`).join("") : `<p class="admin-empty">Noch keine Konten vorhanden.</p>`;
-    } catch (error) {
-      sheet.querySelector("#admin-list").innerHTML = `<p class="admin-empty">Konten konnten nicht geladen werden.</p>`;
-    }
+    const refreshButton = sheet.querySelector("#admin-refresh");
+    const loadProfiles = async (showLoading) => {
+      if (!sheet.isConnected) return;
+      refreshButton.disabled = true;
+      if (showLoading) refreshButton.textContent = "Wird geladen …";
+      try {
+        const profiles = await window.MomentumCloud.listProfiles();
+        if (!sheet.isConnected) return;
+        sheet.querySelector("#admin-count").textContent = `${profiles.length} ${profiles.length === 1 ? "Konto" : "Konten"}`;
+        sheet.querySelector("#admin-list").innerHTML = profiles.length ? profiles.map((profile) => `
+          <div class="admin-user">
+            <div class="admin-user__top"><strong>${escapeHtml(profile.display_name)}</strong><span class="admin-user__status">${profile.status === "active" ? "Aktiv" : "Gesperrt"}</span></div>
+            <small>${escapeHtml(profile.email)}</small>
+            <small>Registriert: ${new Date(profile.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
+            <small>Letzte Aktivität: ${new Date(profile.last_seen_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small>
+          </div>`).join("") : `<p class="admin-empty">Noch keine Konten vorhanden.</p>`;
+      } catch (error) {
+        if (!sheet.isConnected) return;
+        sheet.querySelector("#admin-count").textContent = "Verbindung unterbrochen";
+        sheet.querySelector("#admin-list").innerHTML = `<p class="admin-empty">Konten konnten nicht geladen werden.</p>`;
+      } finally {
+        if (sheet.isConnected) {
+          refreshButton.disabled = false;
+          refreshButton.textContent = "↻ Aktualisieren";
+        }
+      }
+    };
+    const scheduleRefresh = () => {
+      refreshTimer = setTimeout(async () => {
+        if (!sheet.isConnected) return;
+        await loadProfiles(false);
+        scheduleRefresh();
+      }, 5000);
+    };
+    sheet.querySelector("[data-close]").onclick = () => { clearTimeout(refreshTimer); closeSheet(); };
+    refreshButton.onclick = () => loadProfiles(true);
+    await loadProfiles(false);
+    scheduleRefresh();
   }
 
   /* ---------- Theme ---------- */
@@ -1239,7 +1266,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=13").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=14").then((registration) => registration.update()).catch(() => {});
     }
   }
 

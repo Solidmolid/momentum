@@ -635,6 +635,9 @@ button.task__content { border: 0; background: transparent; color: var(--text); t
 .account-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .account-actions .btn { min-height: 40px; padding: 9px 10px; font-size: 12px; }
 .admin-list { display: flex; flex-direction: column; gap: 8px; }
+.admin-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 32px; margin: -4px 0 10px; color: var(--text-muted); font-size: 12px; }
+.admin-toolbar .text-btn { min-height: 30px; }
+.admin-toolbar .text-btn:disabled { opacity: .5; }
 .admin-user { padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-2); }
 .admin-user__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .admin-user strong { font-size: 14px; }
