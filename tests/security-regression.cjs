@@ -9,7 +9,7 @@ function appSecurityApi() {
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const instrumented = source.replace(
     /  \/\/ Robust starten[\s\S]*?\}\)\(\);\s*$/,
-    "  window.__securityTest = { normalizeState, escapeHtml, purgePrivateBrowserData };\n})();"
+    "  window.__securityTest = { normalizeState, stateHasDuplicateHabits, escapeHtml, purgePrivateBrowserData };\n})();"
   );
   assert.notEqual(instrumented, source, "app.js test hook could not be injected");
 
@@ -30,14 +30,14 @@ function appSecurityApi() {
   const deletedCaches = [];
   const deletedRequests = [];
   const currentRequests = [
-    { url: "http://127.0.0.1:8124/app.js?v=23" },
+    { url: "http://127.0.0.1:8124/app.js?v=24" },
     { url: "https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states" },
   ];
   const caches = {
-    async keys() { return ["momentum-v22", "momentum-v23", "another-app-v1"]; },
+    async keys() { return ["momentum-v22", "momentum-v23", "momentum-v24", "another-app-v1"]; },
     async delete(name) { deletedCaches.push(name); return true; },
     async open(name) {
-      assert.equal(name, "momentum-v23");
+      assert.equal(name, "momentum-v24");
       return {
         async keys() { return currentRequests; },
         async delete(request) { deletedRequests.push(request.url); return true; },
@@ -71,17 +71,29 @@ function appSecurityApi() {
 
 async function testStateSanitizingAndLogoutPurge() {
   const { api, values, deletedCaches, deletedRequests } = appSecurityApi();
+  const firstHabitId = "bad\" onmouseover=\"alert(1)";
+  const duplicateHabitId = "duplicate-habit";
   const malicious = {
     meta: { updatedAt: Date.now(), unexpected: "drop" },
     settings: { startDate: "2026-07-01", theme: "<img>" },
     habits: [{
-      id: "bad\" onmouseover=\"alert(1)",
+      id: firstHabitId,
+      emoji: "<img src=x onerror=alert(1)>",
+      name: "<script>steal()</script>",
+      type: "weekly",
+      target: 999,
+    }, {
+      id: duplicateHabitId,
       emoji: "<img src=x onerror=alert(1)>",
       name: "<script>steal()</script>",
       type: "weekly",
       target: 999,
     }],
-    log: { "not-a-date": { bad: true } },
+    log: {
+      "2026-07-01": { [firstHabitId]: true },
+      "2026-07-02": { [duplicateHabitId]: true },
+      "not-a-date": { bad: true },
+    },
     taskSections: [{ id: "section\" onclick=\"steal()", name: "<b>Privat</b>" }],
     tasks: {},
     archivedTasks: [],
@@ -90,7 +102,10 @@ async function testStateSanitizingAndLogoutPurge() {
     injected: "drop me",
   };
 
+  assert.equal(api.stateHasDuplicateHabits(malicious), true);
   const normalized = api.normalizeState(malicious);
+  assert.equal(api.stateHasDuplicateHabits(normalized), false);
+  assert.equal(normalized.habits.length, 1);
   assert.match(normalized.habits[0].id, /^[A-Za-z0-9_-]{1,80}$/);
   assert.equal(normalized.habits[0].target, 7);
   assert.equal(normalized.settings.theme, "light");
@@ -98,10 +113,12 @@ async function testStateSanitizingAndLogoutPurge() {
   assert.equal(normalized.injected, undefined);
   assert.equal(normalized.meta.unexpected, undefined);
   assert.equal(api.escapeHtml(normalized.habits[0].emoji).includes("<img"), false);
+  assert.equal(normalized.log["2026-07-01"][normalized.habits[0].id], true);
+  assert.equal(normalized.log["2026-07-02"][normalized.habits[0].id], true);
 
   await api.purgePrivateBrowserData();
   assert.deepEqual([...values.entries()], [["unrelated", "keep"]]);
-  assert.deepEqual(deletedCaches, ["momentum-v22"]);
+  assert.deepEqual(deletedCaches, ["momentum-v22", "momentum-v23"]);
   assert.deepEqual(deletedRequests, ["https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"]);
 }
 
@@ -143,7 +160,7 @@ function testServiceWorkerCacheBoundary() {
 
   assert.equal(isIntercepted("https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"), false);
   assert.equal(isIntercepted("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.3/dist/umd/supabase.js"), false);
-  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=23"), true);
+  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=24"), true);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/private.json"), false);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/", "navigate"), true);
 }

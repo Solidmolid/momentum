@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "4.3";
+  const APP_VERSION = "4.4";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const HEALTH_FIELDS = [
@@ -92,6 +92,31 @@
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? Math.min(number, max) : fallback;
   };
+  const cleanHabitDefinition = (rawHabit) => ({
+    emoji: cleanText(rawHabit?.emoji, 8, "•"),
+    name: cleanText(rawHabit?.name, 60, "Gewohnheit"),
+    type: rawHabit?.type === "weekly" ? "weekly" : "daily",
+    target: Math.max(1, Math.min(7, Math.round(cleanNumber(rawHabit?.target, 1, 7)))),
+  });
+  const habitFingerprint = (habit) => JSON.stringify([
+    habit.type,
+    habit.name.toLocaleLowerCase("de-DE"),
+    habit.emoji,
+    habit.target,
+  ]);
+  const stateHasDuplicateHabits = (value) => {
+    const rawHabits = Array.isArray(value?.habits) ? value.habits.slice(0, 100) : [];
+    const ids = new Set();
+    const fingerprints = new Set();
+    return rawHabits.some((rawHabit) => {
+      const rawId = String(rawHabit?.id ?? "");
+      const fingerprint = habitFingerprint(cleanHabitDefinition(rawHabit));
+      const duplicate = (rawId && ids.has(rawId)) || fingerprints.has(fingerprint);
+      if (rawId) ids.add(rawId);
+      fingerprints.add(fingerprint);
+      return duplicate;
+    });
+  };
 
   function normalizeState(s) {
     s = s && typeof s === "object" ? s : seedState();
@@ -108,20 +133,26 @@
 
     const habitIds = new Map();
     const usedHabitIds = new Set();
+    const habitsByFingerprint = new Map();
     const rawHabits = Array.isArray(s.habits) ? s.habits.slice(0, 100) : [];
-    s.habits = rawHabits.map((rawHabit) => {
+    s.habits = [];
+    rawHabits.forEach((rawHabit) => {
       const rawId = String(rawHabit?.id ?? "");
+      if (rawId && habitIds.has(rawId)) return;
+      const definition = cleanHabitDefinition(rawHabit);
+      const fingerprint = habitFingerprint(definition);
+      const existing = habitsByFingerprint.get(fingerprint);
+      if (existing) {
+        if (rawId) habitIds.set(rawId, existing.id);
+        return;
+      }
       let id = cleanId(rawId);
       while (usedHabitIds.has(id)) id = uid();
       usedHabitIds.add(id);
       if (rawId) habitIds.set(rawId, id);
-      return {
-        id,
-        emoji: cleanText(rawHabit?.emoji, 8, "•"),
-        name: cleanText(rawHabit?.name, 60, "Gewohnheit"),
-        type: rawHabit?.type === "weekly" ? "weekly" : "daily",
-        target: Math.max(1, Math.min(7, Math.round(cleanNumber(rawHabit?.target, 1, 7)))),
-      };
+      const habit = { id, ...definition };
+      habitsByFingerprint.set(fingerprint, habit);
+      s.habits.push(habit);
     });
 
     const rawLog = s.log && typeof s.log === "object" ? s.log : {};
@@ -306,7 +337,7 @@
   function loadUserLocal(userId) {
     try {
       const raw = localStorage.getItem(userStorageKey(userId));
-      return raw ? normalizeState(JSON.parse(raw)) : null;
+      return raw ? JSON.parse(raw) : null;
     } catch (_error) { return null; }
   }
   function save() {
@@ -331,7 +362,7 @@
     if (!("caches" in window)) return;
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.filter((name) => name.startsWith("momentum-")).map(async (name) => {
-      if (name !== "momentum-v23") return caches.delete(name);
+      if (name !== "momentum-v24") return caches.delete(name);
       const cache = await caches.open(name);
       const requests = await cache.keys();
       return Promise.all(requests
@@ -1119,16 +1150,28 @@
       }
       cloudProfile = await window.MomentumCloud.touchProfile(user.id);
       const remote = await window.MomentumCloud.loadState(user.id);
-      const remoteState = remote?.state && Object.keys(remote.state).length ? normalizeState(remote.state) : null;
-      const accountLocal = loadUserLocal(user.id);
+      const remoteRawState = remote?.state && Object.keys(remote.state).length ? remote.state : null;
+      let repairedDuplicateHabits = stateHasDuplicateHabits(remoteRawState);
+      const remoteState = remoteRawState ? normalizeState(remoteRawState) : null;
+      const accountLocalRaw = loadUserLocal(user.id);
+      repairedDuplicateHabits ||= stateHasDuplicateHabits(accountLocalRaw);
+      const accountLocal = accountLocalRaw ? normalizeState(accountLocalRaw) : null;
       const legacyOwner = localStorage.getItem(LEGACY_OWNER_KEY);
+      let legacyLocalRaw = null;
       let legacyLocal = null;
       if ((!legacyOwner || legacyOwner === user.id) && localStorage.getItem(KEY)) {
-        try { legacyLocal = normalizeState(JSON.parse(localStorage.getItem(KEY))); } catch (_error) { legacyLocal = null; }
+        try {
+          legacyLocalRaw = JSON.parse(localStorage.getItem(KEY));
+          repairedDuplicateHabits ||= stateHasDuplicateHabits(legacyLocalRaw);
+          legacyLocal = normalizeState(legacyLocalRaw);
+        } catch (_error) { legacyLocalRaw = null; legacyLocal = null; }
       }
       let localState = accountLocal;
       if (legacyLocal && accountLocal) {
-        if (!stateRevision(legacyLocal) || !stateRevision(accountLocal)) localState = mergeLegacyStates(legacyLocal, accountLocal);
+        if (!stateRevision(legacyLocal) || !stateRevision(accountLocal)) {
+          repairedDuplicateHabits ||= stateHasDuplicateHabits({ habits: [...legacyLocal.habits, ...accountLocal.habits] });
+          localState = mergeLegacyStates(legacyLocal, accountLocal);
+        }
         else localState = stateRevision(accountLocal) >= stateRevision(legacyLocal) ? accountLocal : legacyLocal;
       } else if (legacyLocal) localState = legacyLocal;
 
@@ -1137,6 +1180,7 @@
         const remoteRevision = stateRevision(remoteState);
         const localRevision = stateRevision(localState);
         if (!remoteRevision || !localRevision) {
+          repairedDuplicateHabits ||= stateHasDuplicateHabits({ habits: [...remoteState.habits, ...localState.habits] });
           state = localRevision >= remoteRevision ? mergeLegacyStates(remoteState, localState) : mergeLegacyStates(localState, remoteState);
           shouldUpload = true;
         } else if (localRevision > remoteRevision) {
@@ -1154,6 +1198,10 @@
         state = legacyOwner && legacyOwner !== user.id ? seedState() : normalizeState(state);
         shouldUpload = true;
       }
+      if (repairedDuplicateHabits) {
+        state.meta.updatedAt = Math.max(Date.now(), stateRevision(state) + 1);
+        shouldUpload = true;
+      }
       cloudUser = user;
       localStorage.setItem(userStorageKey(user.id), JSON.stringify(state));
       if (shouldUpload) await window.MomentumCloud.saveState(user.id, cloneState(state));
@@ -1163,6 +1211,7 @@
       resetViewState();
       showApp();
       switchScreen("habits");
+      if (repairedDuplicateHabits) toast("Doppelte Gewohnheiten wurden zusammengeführt");
     } catch (error) {
       console.error("Konto konnte nicht geladen werden", error);
       cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
@@ -1868,7 +1917,7 @@
           reload();
         });
       });
-      navigator.serviceWorker.register("service-worker.js?v=23").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=24").then((registration) => registration.update()).catch(() => {});
     }
   }
 
