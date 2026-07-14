@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "4.0";
+  const APP_VERSION = "4.1";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const HEALTH_FIELDS = [
@@ -46,6 +46,7 @@
     const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
       version: 4,
+      meta: { updatedAt: Date.now() },
       settings: { startDate, startMonday, theme: "light" },
       habits: [
         { id: uid(), emoji: "🌅", name: "Aufstehen um 5 Uhr", type: "daily", target: 1 },
@@ -71,6 +72,9 @@
   function normalizeState(s) {
     s = s && typeof s === "object" ? s : seedState();
     s.settings = s.settings || {};
+    s.meta = s.meta && typeof s.meta === "object" ? s.meta : {};
+    const updatedAt = Number(s.meta.updatedAt);
+    s.meta.updatedAt = Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0;
     const requestedStart = s.settings.startDate || s.settings.startMonday || todayStr();
     s.settings.startDate = requestedStart > todayStr() ? todayStr() : requestedStart;
     s.settings.startMonday = dateStr(mondayOf(parseDate(s.settings.startDate)));
@@ -107,6 +111,37 @@
     s.version = 4;
     return s;
   }
+  const stateRevision = (value) => Number(value?.meta?.updatedAt) || 0;
+  const cloneState = (value) => JSON.parse(JSON.stringify(value));
+  function mergeById(base, preferred) {
+    const items = new Map();
+    [...(base || []), ...(preferred || [])].forEach((item) => { if (item?.id) items.set(item.id, { ...items.get(item.id), ...item }); });
+    return [...items.values()];
+  }
+  function mergeLegacyStates(baseState, preferredState) {
+    const base = normalizeState(cloneState(baseState));
+    const preferred = normalizeState(cloneState(preferredState));
+    const merged = normalizeState(cloneState(base));
+    merged.settings = { ...base.settings, ...preferred.settings };
+    merged.habits = mergeById(base.habits, preferred.habits);
+    merged.log = { ...base.log };
+    Object.entries(preferred.log || {}).forEach(([date, record]) => { merged.log[date] = { ...(merged.log[date] || {}), ...record }; });
+    merged.taskSections = mergeById(base.taskSections, preferred.taskSections);
+    const sectionIds = new Set([...Object.keys(base.tasks || {}), ...Object.keys(preferred.tasks || {}), ...merged.taskSections.map((section) => section.id)]);
+    merged.tasks = {};
+    sectionIds.forEach((sectionId) => { merged.tasks[sectionId] = mergeById(base.tasks?.[sectionId], preferred.tasks?.[sectionId]); });
+    merged.archivedTasks = mergeById(base.archivedTasks, preferred.archivedTasks);
+    const preferredActiveIds = new Set(Object.values(preferred.tasks || {}).flat().map((task) => task.id));
+    const preferredArchivedIds = new Set((preferred.archivedTasks || []).map((task) => task.id));
+    Object.keys(merged.tasks).forEach((sectionId) => { merged.tasks[sectionId] = merged.tasks[sectionId].filter((task) => !preferredArchivedIds.has(task.id)); });
+    merged.archivedTasks = merged.archivedTasks.filter((task) => !preferredActiveIds.has(task.id));
+    merged.events = mergeById(base.events, preferred.events);
+    merged.health.goals = { ...base.health.goals, ...preferred.health.goals };
+    merged.health.entries = { ...base.health.entries };
+    Object.entries(preferred.health.entries || {}).forEach(([date, entry]) => { merged.health.entries[date] = { ...(merged.health.entries[date] || {}), ...entry }; });
+    merged.meta = { updatedAt: Math.max(Date.now(), stateRevision(base), stateRevision(preferred)) + 1, mergedLegacy: true };
+    return normalizeState(merged);
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -125,6 +160,8 @@
   }
   function save() {
     try {
+      state.meta = state.meta || {};
+      state.meta.updatedAt = Math.max(Date.now(), stateRevision(state) + 1);
       localStorage.setItem(cloudUser ? userStorageKey(cloudUser.id) : KEY, JSON.stringify(state));
       scheduleCloudSave();
     }
@@ -146,6 +183,8 @@
   let cloudProfile = null;
   let cloudIsAdmin = false;
   let cloudSyncTimer = null;
+  let cloudSaveInFlight = null;
+  let cloudSaveRequested = false;
   let cloudSyncLabel = "Noch nicht synchronisiert";
   let activatingUserId = null;
 
@@ -739,15 +778,32 @@
   async function flushCloudState() {
     if (!cloudUser || !window.MomentumCloud?.available) return;
     clearTimeout(cloudSyncTimer);
-    try {
-      setCloudStatus("Synchronisiert …");
-      await window.MomentumCloud.saveState(cloudUser.id, state);
-      setCloudStatus(`Synchronisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
-    } catch (error) {
-      console.warn("Cloud-Synchronisierung pausiert", error);
-      setCloudStatus(navigator.onLine ? "Synchronisierung fehlgeschlagen – neuer Versuch folgt" : "Offline – wird später synchronisiert");
-      if (navigator.onLine) cloudSyncTimer = setTimeout(flushCloudState, 5000);
-    }
+    cloudSaveRequested = true;
+    if (cloudSaveInFlight) return cloudSaveInFlight;
+
+    cloudSaveInFlight = (async () => {
+      try {
+        do {
+          cloudSaveRequested = false;
+          const userId = cloudUser?.id;
+          if (!userId) break;
+          const snapshot = cloneState(state);
+          const revision = stateRevision(snapshot);
+          setCloudStatus("Synchronisiert …");
+          await window.MomentumCloud.saveState(userId, snapshot);
+          if (cloudUser?.id === userId && stateRevision(state) > revision) cloudSaveRequested = true;
+        } while (cloudSaveRequested);
+        if (cloudUser) setCloudStatus(`Synchronisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+      } catch (error) {
+        console.warn("Cloud-Synchronisierung pausiert", error);
+        cloudSaveRequested = false;
+        setCloudStatus(navigator.onLine ? "Synchronisierung fehlgeschlagen – neuer Versuch folgt" : "Offline – wird später synchronisiert");
+        if (navigator.onLine) cloudSyncTimer = setTimeout(flushCloudState, 5000);
+      } finally {
+        cloudSaveInFlight = null;
+      }
+    })();
+    return cloudSaveInFlight;
   }
 
   function resetViewState() {
@@ -806,17 +862,44 @@
     showAuth("Dein Stand wird geladen …");
     try {
       const remote = await window.MomentumCloud.loadState(user.id);
-      if (remote?.state && Object.keys(remote.state).length) {
-        state = normalizeState(remote.state);
+      const remoteState = remote?.state && Object.keys(remote.state).length ? normalizeState(remote.state) : null;
+      const accountLocal = loadUserLocal(user.id);
+      const legacyOwner = localStorage.getItem(LEGACY_OWNER_KEY);
+      let legacyLocal = null;
+      if ((!legacyOwner || legacyOwner === user.id) && localStorage.getItem(KEY)) {
+        try { legacyLocal = normalizeState(JSON.parse(localStorage.getItem(KEY))); } catch (_error) { legacyLocal = null; }
+      }
+      let localState = accountLocal;
+      if (legacyLocal && accountLocal) {
+        if (!stateRevision(legacyLocal) || !stateRevision(accountLocal)) localState = mergeLegacyStates(legacyLocal, accountLocal);
+        else localState = stateRevision(accountLocal) >= stateRevision(legacyLocal) ? accountLocal : legacyLocal;
+      } else if (legacyLocal) localState = legacyLocal;
+
+      let shouldUpload = false;
+      if (remoteState && localState) {
+        const remoteRevision = stateRevision(remoteState);
+        const localRevision = stateRevision(localState);
+        if (!remoteRevision || !localRevision) {
+          state = localRevision >= remoteRevision ? mergeLegacyStates(remoteState, localState) : mergeLegacyStates(localState, remoteState);
+          shouldUpload = true;
+        } else if (localRevision > remoteRevision) {
+          state = localState;
+          shouldUpload = true;
+        } else {
+          state = remoteState;
+        }
+      } else if (localState) {
+        state = localState;
+        shouldUpload = true;
+      } else if (remoteState) {
+        state = remoteState;
       } else {
-        const accountLocal = loadUserLocal(user.id);
-        const legacyOwner = localStorage.getItem(LEGACY_OWNER_KEY);
-        if (accountLocal) state = accountLocal;
-        else if (legacyOwner && legacyOwner !== user.id) state = seedState();
-        await window.MomentumCloud.saveState(user.id, state);
+        state = legacyOwner && legacyOwner !== user.id ? seedState() : normalizeState(state);
+        shouldUpload = true;
       }
       cloudUser = user;
       localStorage.setItem(userStorageKey(user.id), JSON.stringify(state));
+      if (shouldUpload) await window.MomentumCloud.saveState(user.id, cloneState(state));
       if (!localStorage.getItem(LEGACY_OWNER_KEY)) localStorage.setItem(LEGACY_OWNER_KEY, user.id);
       cloudProfile = await window.MomentumCloud.touchProfile(user.id);
       if (cloudProfile.status === "blocked") throw new Error("Dieses Konto ist gesperrt.");
@@ -1469,6 +1552,10 @@
     bindEvents();
     initCloud();
     window.addEventListener("online", flushCloudState);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushCloudState();
+    });
+    window.addEventListener("pagehide", flushCloudState);
 
     // Neue App-Versionen sofort übernehmen, auch bei installierter Home-Screen-App.
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -1476,9 +1563,19 @@
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (refreshing) return;
         refreshing = true;
-        location.reload();
+        let reloading = false;
+        const reload = () => {
+          if (reloading) return;
+          reloading = true;
+          location.reload();
+        };
+        const fallback = setTimeout(reload, 1800);
+        Promise.resolve(flushCloudState()).finally(() => {
+          clearTimeout(fallback);
+          reload();
+        });
       });
-      navigator.serviceWorker.register("service-worker.js?v=18").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=19").then((registration) => registration.update()).catch(() => {});
     }
   }
 
