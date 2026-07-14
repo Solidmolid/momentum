@@ -7,9 +7,16 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "3.3";
+  const APP_VERSION = "4.0";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+  const HEALTH_FIELDS = [
+    { key: "calories", label: "Kalorien", short: "kcal", unit: "kcal" },
+    { key: "protein", label: "Eiweiß", short: "Eiweiß", unit: "g" },
+    { key: "carbs", label: "Kohlenhydrate", short: "KH", unit: "g" },
+    { key: "fat", label: "Fett", short: "Fett", unit: "g" },
+    { key: "steps", label: "Schritte", short: "Schritte", unit: "" },
+  ];
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 
@@ -38,7 +45,7 @@
     const startDate = todayStr();
     const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
-      version: 3,
+      version: 4,
       settings: { startDate, startMonday, theme: "light" },
       habits: [
         { id: uid(), emoji: "🌅", name: "Aufstehen um 5 Uhr", type: "daily", target: 1 },
@@ -55,6 +62,7 @@
       taskSections: [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }],
       archivedTasks: [],
       events: [],
+      health: { goals: { calories: 0, protein: 0, carbs: 0, fat: 0, steps: 0 }, entries: {} },
     };
   }
 
@@ -76,12 +84,27 @@
     s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
     s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
     s.events = Array.isArray(s.events) ? s.events : [];
+    s.health = s.health && typeof s.health === "object" ? s.health : {};
+    s.health.goals = s.health.goals && typeof s.health.goals === "object" ? s.health.goals : {};
+    HEALTH_FIELDS.forEach((field) => {
+      const goal = Number(s.health.goals[field.key]);
+      s.health.goals[field.key] = Number.isFinite(goal) && goal >= 0 ? goal : 0;
+    });
+    const rawHealthEntries = s.health.entries && typeof s.health.entries === "object" ? s.health.entries : {};
+    s.health.entries = Object.fromEntries(Object.entries(rawHealthEntries).map(([date, rawEntry]) => {
+      const entry = {};
+      HEALTH_FIELDS.forEach((field) => {
+        const value = Number(rawEntry?.[field.key]);
+        if (rawEntry?.[field.key] !== "" && Number.isFinite(value) && value >= 0) entry[field.key] = value;
+      });
+      return [date, entry];
+    }).filter(([, entry]) => Object.keys(entry).length));
     s.events.forEach((event) => {
       event.startTime = event.startTime || event.time || "";
       event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
       delete event.time;
     });
-    s.version = 3;
+    s.version = 4;
     return s;
   }
   function load() {
@@ -114,6 +137,9 @@
   let screen = "habits";
   let calendarMonth;
   let calendarSelected;
+  let healthSelected;
+  let healthMetric = "calories";
+  let healthRange = "week";
   let trendRange = "start";
   let archiveExpanded = false;
   let cloudUser = null;
@@ -524,10 +550,157 @@
     return `https://calendar.google.com/calendar/render?${params.toString()}`;
   }
 
+  /* ---------- Gesundheit ---------- */
+  const healthField = (key) => HEALTH_FIELDS.find((field) => field.key === key) || HEALTH_FIELDS[0];
+  const healthEntry = (ds) => state.health.entries[ds] || {};
+  const healthValue = (ds, key) => {
+    const value = Number(healthEntry(ds)[key]);
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  };
+  const formatHealthNumber = (value) => Math.round(value).toLocaleString("de-DE");
+
+  function healthTrendData() {
+    const today = parseDate(todayStr());
+    const selected = parseDate(healthSelected || todayStr());
+    const reference = selected > today ? today : selected;
+    const metric = healthMetric;
+    const dateSeries = (dates) => ({
+      values: dates.map((date) => healthValue(dateStr(date), metric)),
+      recorded: dates.map((date) => Object.prototype.hasOwnProperty.call(healthEntry(dateStr(date)), metric)),
+    });
+    if (healthRange === "start") {
+      const start = parseDate(state.settings.startDate);
+      const count = Math.max(1, Math.floor((today - start) / 864e5) + 1);
+      const dates = Array.from({ length: count }, (_, index) => addDays(start, index));
+      const labelPoints = new Set([0, Math.round((count - 1) * .25), Math.round((count - 1) * .5), Math.round((count - 1) * .75), count - 1]);
+      return {
+        ...dateSeries(dates),
+        labels: dates.map((date, index) => labelPoints.has(index) ? `${date.getDate()}.${date.getMonth() + 1}.` : ""),
+        caption: `seit ${fmtDM(start)}`,
+      };
+    }
+    if (healthRange === "week") {
+      const dates = weekDays(dateStr(mondayOf(reference))).filter((date) => date <= today);
+      return {
+        ...dateSeries(dates),
+        labels: dates.map((date) => WD[(date.getDay() + 6) % 7]),
+        caption: "in dieser Woche",
+      };
+    }
+    if (healthRange === "month") {
+      const dates = Array.from({ length: 30 }, (_, index) => addDays(reference, index - 29));
+      const points = new Set([0, 7, 14, 21, 29]);
+      return {
+        ...dateSeries(dates),
+        labels: dates.map((date, index) => points.has(index) ? `${date.getDate()}.${date.getMonth() + 1}.` : ""),
+        caption: "in den letzten 30 Tagen",
+      };
+    }
+    const months = Array.from({ length: 12 }, (_, index) => new Date(reference.getFullYear(), reference.getMonth() - 11 + index, 1));
+    const monthSeries = months.map((monthStart) => {
+      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+      const cappedEnd = monthEnd > today ? today : monthEnd;
+      if (monthStart > cappedEnd) return { value: 0, recorded: false };
+      const count = Math.floor((cappedEnd - monthStart) / 864e5) + 1;
+      const values = Array.from({ length: count }, (_, index) => addDays(monthStart, index))
+        .filter((date) => Object.prototype.hasOwnProperty.call(healthEntry(dateStr(date)), metric))
+        .map((date) => healthValue(dateStr(date), metric));
+      return { value: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0, recorded: values.length > 0 };
+    });
+    return {
+      values: monthSeries.map((month) => month.value),
+      recorded: monthSeries.map((month) => month.recorded),
+      labels: months.map((date) => MONTHS[date.getMonth()].slice(0, 3)),
+      caption: "im 12-Monats-Rückblick",
+    };
+  }
+
+  function buildHealthChart(data, goal) {
+    const W = 320, H = 150, padX = 7, padY = 13;
+    const maxValue = Math.max(1, goal || 0, ...data.values) * 1.08;
+    const denom = Math.max(1, data.values.length - 1);
+    const points = data.values.map((value, index) => ({
+      x: padX + (W - padX * 2) * (index / denom),
+      y: padY + (H - padY * 2) * (1 - value / maxValue),
+    }));
+    const path = smoothPath(points);
+    const base = H - padY;
+    const area = points.length ? `${path} L${points[points.length - 1].x.toFixed(1)},${base} L${points[0].x.toFixed(1)},${base} Z` : "";
+    const goalY = goal ? padY + (H - padY * 2) * (1 - goal / maxValue) : null;
+    const last = points[points.length - 1];
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Gesundheitsverlauf">
+      <defs><linearGradient id="healthArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--text)" stop-opacity=".18"/><stop offset="1" stop-color="var(--text)" stop-opacity="0"/></linearGradient></defs>
+      <line x1="${padX}" y1="${padY}" x2="${W - padX}" y2="${padY}" class="trend-gridline"/>
+      <line x1="${padX}" y1="${H / 2}" x2="${W - padX}" y2="${H / 2}" class="trend-gridline"/>
+      <line x1="${padX}" y1="${base}" x2="${W - padX}" y2="${base}" class="trend-gridline"/>
+      ${goalY != null ? `<line x1="${padX}" y1="${goalY.toFixed(1)}" x2="${W - padX}" y2="${goalY.toFixed(1)}" class="health-goal-line"/>` : ""}
+      <path d="${area}" fill="url(#healthArea)"/>
+      <path d="${path}" fill="none" stroke="var(--text)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${last ? `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="4.5" fill="var(--surface)" stroke="var(--text)" stroke-width="2.5"/>` : ""}
+    </svg>`;
+  }
+
+  function renderHealth() {
+    const today = todayStr();
+    const earliest = dateStr(addDays(new Date(), -370));
+    const selected = parseDate(healthSelected);
+    const entry = healthEntry(healthSelected);
+    const filled = HEALTH_FIELDS.filter((field) => entry[field.key] !== undefined && entry[field.key] !== "").length;
+    $("#health-date").value = healthSelected;
+    $("#health-date").max = today;
+    $("#health-date").min = earliest;
+    $("#health-prev").disabled = healthSelected <= earliest;
+    $("#health-next").disabled = healthSelected >= today;
+    $("#health-day-title").textContent = healthSelected === today ? "Heute" : `${WD[(selected.getDay() + 6) % 7]}, ${selected.getDate()}. ${MONTHS[selected.getMonth()]}`;
+    $("#health-day-summary").textContent = `${filled}/5 Werte eingetragen`;
+    $("#health-fields").innerHTML = HEALTH_FIELDS.map((field) => {
+      const value = entry[field.key] ?? "";
+      const goal = state.health.goals[field.key] || 0;
+      const pct = goal ? Math.min(100, Math.round((Number(value || 0) / goal) * 100)) : 0;
+      const goalText = goal ? `${formatHealthNumber(Number(value || 0))} / ${formatHealthNumber(goal)} ${field.unit}`.trim() : "Kein Ziel gesetzt";
+      return `<label class="health-field health-field--${field.key}">
+        <span class="health-field__label">${field.label}</span>
+        <span class="health-field__value"><input type="number" min="0" step="1" inputmode="decimal" autocomplete="off" name="momentum-health-${field.key}" data-health-field="${field.key}" value="${value}" placeholder="0"><b>${field.unit}</b></span>
+        <span class="health-field__goal">${goalText}</span>
+        <i><em style="width:${pct}%"></em></i>
+      </label>`;
+    }).join("");
+    $("#health-metric").querySelectorAll("button").forEach((button) => button.classList.toggle("is-active", button.dataset.healthMetric === healthMetric));
+    $("#health-range").querySelectorAll("button").forEach((button) => button.classList.toggle("is-active", button.dataset.healthRange === healthRange));
+    const field = healthField(healthMetric);
+    const data = healthTrendData();
+    const recordedValues = data.values.filter((_, index) => data.recorded[index]);
+    const average = recordedValues.length ? recordedValues.reduce((sum, value) => sum + value, 0) / recordedValues.length : 0;
+    $("#health-trend-label").textContent = field.label;
+    $("#health-trend-value").textContent = `${formatHealthNumber(average)}${field.unit ? " " + field.unit : ""}`;
+    $("#health-trend-caption").textContent = data.caption;
+    $("#health-chart").innerHTML = buildHealthChart(data, state.health.goals[healthMetric] || 0);
+    const labelIndexes = healthRange === "week" ? data.labels.map((_, index) => index) : data.labels.map((label, index) => label ? index : -1).filter((index) => index >= 0);
+    $("#health-axis").innerHTML = labelIndexes.map((index) => `<span style="left:${data.labels.length <= 1 ? 0 : (index / (data.labels.length - 1)) * 100}%">${data.labels[index]}</span>`).join("");
+    if (screen === "health") $("#appbar-sub").textContent = healthSelected === today ? "Dein Tagesstand" : formatLongDate(healthSelected);
+  }
+
+  function openHealthGoals() {
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">Gesundheit</span><div class="sheet__title">Deine Tagesziele</div></div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <p class="field-hint" style="margin:0 0 14px">Lege deine Werte selbst fest. Sie dienen nur deiner persönlichen Übersicht und sind keine medizinische Empfehlung.</p>
+      <div class="health-goal-fields">${HEALTH_FIELDS.map((field) => `<label class="field"><span>${field.label}${field.unit ? ` (${field.unit})` : ""}</span><input class="input" type="number" min="0" step="1" inputmode="decimal" autocomplete="off" data-health-goal="${field.key}" value="${state.health.goals[field.key] || ""}" placeholder="Kein Ziel"></label>`).join("")}</div>
+      <button class="btn" id="save-health-goals">Ziele speichern</button>`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#save-health-goals").onclick = () => {
+      sheet.querySelectorAll("[data-health-goal]").forEach((input) => {
+        const value = Number(input.value);
+        state.health.goals[input.dataset.healthGoal] = Number.isFinite(value) && value > 0 ? value : 0;
+      });
+      save(); closeSheet(); renderHealth(); toast("Gesundheitsziele gespeichert");
+    };
+  }
+
   function render() {
     if (screen === "habits") renderHabits();
     else if (screen === "tasks") renderTasks();
-    else renderCalendar();
+    else if (screen === "calendar") renderCalendar();
+    else renderHealth();
   }
 
   /* ---------- Screen-Wechsel ---------- */
@@ -536,11 +709,12 @@
     $("#screen-habits").hidden = name !== "habits";
     $("#screen-tasks").hidden = name !== "tasks";
     $("#screen-calendar").hidden = name !== "calendar";
-    const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender" };
+    $("#screen-health").hidden = name !== "health";
+    const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender", health: "Gesundheit" };
     $("#appbar-title").textContent = titles[name];
     const wn = weekNumber(currentMonday);
     const openTasks = allTasks().filter((task) => !task.done).length;
-    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Rückblick") : name === "calendar" ? `${MONTHS[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}` : `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
+    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Rückblick") : name === "calendar" ? `${MONTHS[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}` : name === "health" ? "Dein Tagesstand" : `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
     render();
     window.scrollTo({ top: 0 });
@@ -584,6 +758,7 @@
     const now = new Date();
     calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     calendarSelected = todayStr();
+    healthSelected = todayStr();
   }
 
   function setAuthMessage(message, isError) {
@@ -1174,6 +1349,53 @@
       renderHabits();
     });
 
+    // Gesundheit
+    $("#health-prev").addEventListener("click", () => {
+      const previous = dateStr(addDays(parseDate(healthSelected), -1));
+      const earliest = dateStr(addDays(new Date(), -370));
+      if (previous < earliest) return;
+      healthSelected = previous; renderHealth();
+    });
+    $("#health-next").addEventListener("click", () => {
+      const next = dateStr(addDays(parseDate(healthSelected), 1));
+      if (next > todayStr()) return;
+      healthSelected = next; renderHealth();
+    });
+    $("#health-date").addEventListener("change", (e) => {
+      if (!e.target.value) return;
+      const earliest = dateStr(addDays(new Date(), -370));
+      healthSelected = e.target.value < earliest ? earliest : e.target.value > todayStr() ? todayStr() : e.target.value;
+      renderHealth();
+    });
+    $("#health-goals").addEventListener("click", openHealthGoals);
+    const storeHealthInput = (input) => {
+      const entry = { ...(state.health.entries[healthSelected] || {}) };
+      if (input.value === "") delete entry[input.dataset.healthField];
+      else {
+        const value = Number(input.value);
+        entry[input.dataset.healthField] = Number.isFinite(value) && value >= 0 ? value : 0;
+      }
+      if (Object.keys(entry).length) state.health.entries[healthSelected] = entry;
+      else delete state.health.entries[healthSelected];
+      save();
+    };
+    $("#health-fields").addEventListener("input", (e) => {
+      const input = e.target.closest("[data-health-field]"); if (!input) return;
+      storeHealthInput(input);
+    });
+    $("#health-fields").addEventListener("change", (e) => {
+      const input = e.target.closest("[data-health-field]"); if (!input) return;
+      storeHealthInput(input); renderHealth();
+    });
+    $("#health-metric").addEventListener("click", (e) => {
+      const button = e.target.closest("[data-health-metric]"); if (!button) return;
+      healthMetric = button.dataset.healthMetric; renderHealth();
+    });
+    $("#health-range").addEventListener("click", (e) => {
+      const button = e.target.closest("[data-health-range]"); if (!button) return;
+      healthRange = button.dataset.healthRange; renderHealth();
+    });
+
     // Tasks und frei benennbare Blöcke
     $("#add-task").onclick = () => openTaskEditor(null, "", state.taskSections[0].id);
     $("#add-task-section").onclick = () => openSectionEditor(null);
@@ -1256,7 +1478,7 @@
         refreshing = true;
         location.reload();
       });
-      navigator.serviceWorker.register("service-worker.js?v=15").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=18").then((registration) => registration.update()).catch(() => {});
     }
   }
 

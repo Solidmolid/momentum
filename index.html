@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=15" />
+<link rel="stylesheet" href="styles.css?v=18" />
 
 <section id="auth-screen" class="auth-screen" aria-live="polite">
   <div class="auth-card">
@@ -181,6 +181,43 @@
         <div id="agenda-list" class="agenda-list"></div>
       </div>
     </section>
+
+    <!-- === SCREEN: GESUNDHEIT === -->
+    <section id="screen-health" class="screen health-screen" hidden>
+      <div class="health-toolbar">
+        <div class="health-date-nav">
+          <button id="health-prev" class="iconbtn" aria-label="Vorheriger Tag">‹</button>
+          <input id="health-date" type="date" aria-label="Gesundheitstag auswählen">
+          <button id="health-next" class="iconbtn" aria-label="Nächster Tag">›</button>
+        </div>
+        <button id="health-goals" class="btn btn--ghost btn--compact">Ziele</button>
+      </div>
+
+      <div class="card health-day-card">
+        <div class="health-day-card__head">
+          <div><span class="trend-card__eyebrow">Tageswerte</span><h2 id="health-day-title">Heute</h2></div>
+          <span id="health-day-summary">0/5 Werte eingetragen</span>
+        </div>
+        <div id="health-fields" class="health-fields"></div>
+      </div>
+
+      <div class="card health-history-card">
+        <div class="health-history__head">
+          <div><span id="health-trend-label" class="trend-card__eyebrow">Kalorien</span><strong id="health-trend-value">0 kcal</strong><small id="health-trend-caption">in dieser Woche</small></div>
+          <div class="trend-range" id="health-range" aria-label="Gesundheitszeitraum auswählen">
+            <button data-health-range="start">S</button><button data-health-range="week" class="is-active">W</button><button data-health-range="month">M</button><button data-health-range="year">J</button>
+          </div>
+        </div>
+        <div class="health-metric" id="health-metric" aria-label="Gesundheitswert auswählen">
+          <button data-health-metric="calories" class="is-active">kcal</button><button data-health-metric="protein">Eiweiß</button><button data-health-metric="carbs">KH</button><button data-health-metric="fat">Fett</button><button data-health-metric="steps">Schritte</button>
+        </div>
+        <div id="health-chart" class="chart health-chart"></div>
+        <div id="health-axis" class="trend-axis"></div>
+        <p class="health-chart-note">Eine gestrichelte Linie zeigt dein eingestelltes Ziel.</p>
+      </div>
+
+      <p class="health-privacy">Diese Werte gehören nur zu deinem Konto und werden wie deine Gewohnheiten synchronisiert.</p>
+    </section>
   </main>
 
   <!-- Bottom Tab Bar -->
@@ -197,6 +234,10 @@
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
       <span>Kalender</span>
     </button>
+    <button class="tab" data-screen="health">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+      <span>Gesundheit</span>
+    </button>
   </nav>
 
   <!-- Modal-Container (per JS befüllt) -->
@@ -205,4 +246,4 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <script src="cloud.js?v=2" defer></script>
-<script src="app.js?v=15" defer></script>
+<script src="app.js?v=18" defer></script>

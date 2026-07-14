@@ -30,6 +30,12 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Aufgaben direkt für einen ausgewählten Kalendertag erstellen und bearbeiten
 - Termine und Tasks mit einem Tipp in Google Kalender übernehmen
 
+**Gesundheit**
+- Kalorien, Eiweiß, Kohlenhydrate, Fett und Schritte täglich eintragen
+- Eigene Tagesziele festlegen und den Fortschritt direkt sehen
+- Persönlicher Verlauf für Start, Woche, 30 Tage und 12 Monate (`S · W · M · J`)
+- Gesundheitswerte werden pro Benutzer getrennt in der Cloud synchronisiert
+
 **Sonstiges**
 - Benutzerkonten mit E-Mail und Passwort
 - Automatische Synchronisierung zwischen Handy, Laptop und PC
