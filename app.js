@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "4.2";
+  const APP_VERSION = "4.3";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const HEALTH_FIELDS = [
@@ -46,7 +46,7 @@
     const startDate = todayStr();
     const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
-      version: 5,
+      version: 6,
       meta: { updatedAt: Date.now() },
       settings: { startDate, startMonday, theme: "light" },
       habits: [
@@ -70,72 +70,192 @@
 
   /* ---------- State laden / speichern ---------- */
   let state;
+  const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
+  const SAFE_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const cleanText = (value, maxLength, fallback = "") => {
+    const cleaned = String(value ?? fallback).replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, maxLength);
+    return cleaned || fallback;
+  };
+  const cleanId = (value, fallback = uid()) => {
+    const candidate = String(value ?? "");
+    return SAFE_ID.test(candidate) ? candidate : fallback;
+  };
+  const cleanDate = (value, fallback = "") => {
+    const candidate = String(value ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return fallback;
+    const [year, month, day] = candidate.split("-").map(Number);
+    const parsed = new Date(year, month - 1, day);
+    return dateStr(parsed) === candidate ? candidate : fallback;
+  };
+  const cleanTime = (value) => SAFE_TIME.test(String(value ?? "")) ? String(value) : "";
+  const cleanNumber = (value, fallback = 0, max = 1_000_000) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.min(number, max) : fallback;
+  };
+
   function normalizeState(s) {
     s = s && typeof s === "object" ? s : seedState();
-    s.settings = s.settings || {};
-    s.meta = s.meta && typeof s.meta === "object" ? s.meta : {};
-    const updatedAt = Number(s.meta.updatedAt);
-    s.meta.updatedAt = Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0;
-    const requestedStart = s.settings.startDate || s.settings.startMonday || todayStr();
-    s.settings.startDate = requestedStart > todayStr() ? todayStr() : requestedStart;
-    s.settings.startMonday = dateStr(mondayOf(parseDate(s.settings.startDate)));
-    if (!s.settings.theme || s.settings.theme === "auto") s.settings.theme = "light";
-    s.habits = Array.isArray(s.habits) ? s.habits : [];
-    s.log = s.log || {};
-    s.tasks = s.tasks || { short: [], long: [] };
-    s.tasks.short = s.tasks.short || [];
-    s.tasks.long = s.tasks.long || [];
-    s.taskSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections : [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
-    s.taskSections.forEach((section) => { if (!Array.isArray(s.tasks[section.id])) s.tasks[section.id] = []; });
-    s.archivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks : [];
-    s.events = Array.isArray(s.events) ? s.events : [];
-    s.health = s.health && typeof s.health === "object" ? s.health : {};
-    s.health.goals = s.health.goals && typeof s.health.goals === "object" ? s.health.goals : {};
-    HEALTH_FIELDS.forEach((field) => {
-      const goal = Number(s.health.goals[field.key]);
-      s.health.goals[field.key] = Number.isFinite(goal) && goal >= 0 ? goal : 0;
+    const rawSettings = s.settings && typeof s.settings === "object" ? s.settings : {};
+    const requestedStart = cleanDate(rawSettings.startDate || rawSettings.startMonday, todayStr());
+    const startDate = requestedStart > todayStr() ? todayStr() : requestedStart;
+    const updatedAt = Number(s.meta?.updatedAt);
+    s.meta = { updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    s.settings = {
+      startDate,
+      startMonday: dateStr(mondayOf(parseDate(startDate))),
+      theme: rawSettings.theme === "dark" ? "dark" : "light",
+    };
+
+    const habitIds = new Map();
+    const usedHabitIds = new Set();
+    const rawHabits = Array.isArray(s.habits) ? s.habits.slice(0, 100) : [];
+    s.habits = rawHabits.map((rawHabit) => {
+      const rawId = String(rawHabit?.id ?? "");
+      let id = cleanId(rawId);
+      while (usedHabitIds.has(id)) id = uid();
+      usedHabitIds.add(id);
+      if (rawId) habitIds.set(rawId, id);
+      return {
+        id,
+        emoji: cleanText(rawHabit?.emoji, 8, "•"),
+        name: cleanText(rawHabit?.name, 60, "Gewohnheit"),
+        type: rawHabit?.type === "weekly" ? "weekly" : "daily",
+        target: Math.max(1, Math.min(7, Math.round(cleanNumber(rawHabit?.target, 1, 7)))),
+      };
     });
-    const rawHealthEntries = s.health.entries && typeof s.health.entries === "object" ? s.health.entries : {};
+
+    const rawLog = s.log && typeof s.log === "object" ? s.log : {};
+    s.log = {};
+    Object.entries(rawLog).slice(0, 1500).forEach(([rawDate, rawRecord]) => {
+      const date = cleanDate(rawDate);
+      if (!date || !rawRecord || typeof rawRecord !== "object") return;
+      const record = {};
+      Object.entries(rawRecord).forEach(([rawHabitId, completed]) => {
+        const id = habitIds.get(rawHabitId);
+        if (id && completed === true) record[id] = true;
+      });
+      if (Object.keys(record).length) s.log[date] = record;
+    });
+
+    const rawTasks = s.tasks && typeof s.tasks === "object" ? s.tasks : {};
+    const defaultSections = [{ id: "short", name: "Kurzfristig" }, { id: "long", name: "Langfristig" }];
+    const rawSections = Array.isArray(s.taskSections) && s.taskSections.length ? s.taskSections.slice(0, 20) : defaultSections;
+    const usedSectionIds = new Set();
+    const sectionIds = new Map();
+    const sectionEntries = rawSections.map((rawSection) => {
+      const rawId = String(rawSection?.id ?? "");
+      let id = cleanId(rawId);
+      while (usedSectionIds.has(id)) id = uid();
+      usedSectionIds.add(id);
+      if (rawId) sectionIds.set(rawId, id);
+      return { rawId, section: { id, name: cleanText(rawSection?.name, 40, "Aufgaben") } };
+    });
+    s.taskSections = sectionEntries.map((entry) => entry.section);
+
+    const usedTaskIds = new Set();
+    const cleanTask = (rawTask) => {
+      let id = cleanId(rawTask?.id);
+      while (usedTaskIds.has(id)) id = uid();
+      usedTaskIds.add(id);
+      const task = {
+        id,
+        text: cleanText(rawTask?.text, 140, "Aufgabe"),
+        dueDate: cleanDate(rawTask?.dueDate),
+        done: rawTask?.done === true,
+        createdAt: cleanNumber(rawTask?.createdAt, Date.now(), Number.MAX_SAFE_INTEGER),
+      };
+      return task;
+    };
+    s.tasks = {};
+    sectionEntries.forEach(({ rawId, section }) => {
+      const source = Array.isArray(rawTasks[rawId]) ? rawTasks[rawId] : Array.isArray(rawTasks[section.id]) ? rawTasks[section.id] : [];
+      s.tasks[section.id] = source.slice(0, 500).map(cleanTask);
+    });
+    const fallbackSectionId = s.taskSections[0]?.id || "short";
+    const rawArchivedTasks = Array.isArray(s.archivedTasks) ? s.archivedTasks.slice(0, 1000) : [];
+    s.archivedTasks = rawArchivedTasks.map((rawTask) => ({
+      ...cleanTask(rawTask),
+      sectionId: sectionIds.get(String(rawTask?.sectionId ?? "")) || fallbackSectionId,
+      archivedAt: cleanNumber(rawTask?.archivedAt, Date.now(), Number.MAX_SAFE_INTEGER),
+    }));
+
+    const usedEventIds = new Set();
+    const rawEvents = Array.isArray(s.events) ? s.events.slice(0, 2000) : [];
+    s.events = rawEvents.map((rawEvent) => {
+      const date = cleanDate(rawEvent?.date);
+      if (!date) return null;
+      let id = cleanId(rawEvent?.id);
+      while (usedEventIds.has(id)) id = uid();
+      usedEventIds.add(id);
+      const startTime = cleanTime(rawEvent?.startTime || rawEvent?.time);
+      let endTime = cleanTime(rawEvent?.endTime);
+      if (startTime && (!endTime || timeMinutes(endTime) <= timeMinutes(startTime))) endTime = defaultEndTime(startTime);
+      return {
+        id,
+        title: cleanText(rawEvent?.title, 100, "Termin"),
+        date,
+        startTime,
+        endTime,
+        notes: cleanText(rawEvent?.notes, 300),
+      };
+    }).filter(Boolean);
+
+    const rawHealth = s.health && typeof s.health === "object" ? s.health : {};
+    const rawGoals = rawHealth.goals && typeof rawHealth.goals === "object" ? rawHealth.goals : {};
+    s.health = { goals: {}, entries: {} };
+    HEALTH_FIELDS.forEach((field) => {
+      s.health.goals[field.key] = cleanNumber(rawGoals[field.key]);
+    });
+    const rawHealthEntries = rawHealth.entries && typeof rawHealth.entries === "object" ? rawHealth.entries : {};
     s.health.entries = Object.fromEntries(Object.entries(rawHealthEntries).map(([date, rawEntry]) => {
+      const safeDate = cleanDate(date);
+      if (!safeDate) return null;
       const entry = {};
-      const rawFoods = Array.isArray(rawEntry?.foods) ? rawEntry.foods : [];
+      const rawFoods = Array.isArray(rawEntry?.foods) ? rawEntry.foods.slice(0, 100) : [];
+      const usedFoodIds = new Set();
       entry.foods = rawFoods.map((rawFood, index) => {
+        let id = cleanId(rawFood?.id, `${safeDate}-${index}`);
+        while (usedFoodIds.has(id)) id = uid();
+        usedFoodIds.add(id);
         const food = {
-          id: String(rawFood?.id || `${date}-${index}`),
-          name: String(rawFood?.name || "Eintrag").slice(0, 80),
-          time: /^\d{2}:\d{2}$/.test(String(rawFood?.time || "")) ? String(rawFood.time) : "",
-          createdAt: Number(rawFood?.createdAt) || 0,
+          id,
+          name: cleanText(rawFood?.name, 80, "Eintrag"),
+          time: cleanTime(rawFood?.time),
+          createdAt: cleanNumber(rawFood?.createdAt, 0, Number.MAX_SAFE_INTEGER),
         };
         NUTRITION_FIELDS.forEach((field) => {
-          const value = Number(rawFood?.[field.key]);
-          if (rawFood?.[field.key] !== "" && Number.isFinite(value) && value >= 0) food[field.key] = value;
+          if (rawFood?.[field.key] !== "" && rawFood?.[field.key] !== undefined) food[field.key] = cleanNumber(rawFood[field.key]);
         });
         return food;
       });
       if (!entry.foods.length) {
-        const legacyFood = { id: `legacy-${date}`, name: "Bisheriger Tagesstand", time: "", createdAt: 0 };
+        const legacyFood = { id: `legacy-${safeDate}`, name: "Bisheriger Tagesstand", time: "", createdAt: 0 };
         let hasLegacyNutrition = false;
         NUTRITION_FIELDS.forEach((field) => {
           const value = Number(rawEntry?.[field.key]);
           if (rawEntry?.[field.key] !== "" && rawEntry?.[field.key] !== undefined && Number.isFinite(value) && value >= 0) {
-            legacyFood[field.key] = value;
+            legacyFood[field.key] = cleanNumber(value);
             hasLegacyNutrition = true;
           }
         });
         if (hasLegacyNutrition) entry.foods.push(legacyFood);
       }
-      const steps = Number(rawEntry?.steps);
-      if (rawEntry?.steps !== "" && rawEntry?.steps !== undefined && Number.isFinite(steps) && steps >= 0) entry.steps = steps;
+      if (rawEntry?.steps !== "" && rawEntry?.steps !== undefined) entry.steps = cleanNumber(rawEntry.steps);
       if (!entry.foods.length) delete entry.foods;
-      return [date, entry];
-    }).filter(([, entry]) => Object.keys(entry).length));
-    s.events.forEach((event) => {
-      event.startTime = event.startTime || event.time || "";
-      event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
-      delete event.time;
-    });
-    s.version = 5;
-    return s;
+      return [safeDate, entry];
+    }).filter((pair) => pair && Object.keys(pair[1]).length).slice(0, 1500));
+    return {
+      version: 6,
+      meta: s.meta,
+      settings: s.settings,
+      habits: s.habits,
+      log: s.log,
+      tasks: s.tasks,
+      taskSections: s.taskSections,
+      archivedTasks: s.archivedTasks,
+      events: s.events,
+      health: s.health,
+    };
   }
   const stateRevision = (value) => Number(value?.meta?.updatedAt) || 0;
   const cloneState = (value) => JSON.parse(JSON.stringify(value));
@@ -197,6 +317,27 @@
       scheduleCloudSave();
     }
     catch (e) { console.error("Speichern fehlgeschlagen", e); }
+  }
+
+  async function purgePrivateBrowserData() {
+    // Nach dem Abmelden darf kein Kontostand in diesem Browserprofil bleiben.
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key === KEY || key === LEGACY_OWNER_KEY || key === "momentum_cloud_session" || key?.startsWith(`${KEY}_user_`)) {
+        localStorage.removeItem(key);
+      }
+    }
+
+    if (!("caches" in window)) return;
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.filter((name) => name.startsWith("momentum-")).map(async (name) => {
+      if (name !== "momentum-v23") return caches.delete(name);
+      const cache = await caches.open(name);
+      const requests = await cache.keys();
+      return Promise.all(requests
+        .filter((request) => new URL(request.url).origin !== location.origin)
+        .map((request) => cache.delete(request)));
+    }));
   }
 
   /* ---------- View-State (nicht gespeichert) ---------- */
@@ -424,7 +565,7 @@
     $("#habit-stats").innerHTML = dailyHabits().map((habit) => {
       const done = validDates.filter((d) => isToggle(dateStr(d), habit.id)).length;
       const rate = validDates.length ? Math.round(done / validDates.length * 100) : 0;
-      return `<div class="habit-stat"><span class="habit-stat__emoji">${habit.emoji || "•"}</span><span class="habit-stat__main"><span><strong>${escapeHtml(habit.name)}</strong><b>${rate} %</b></span><i><em style="width:${rate}%"></em></i></span></div>`;
+      return `<div class="habit-stat"><span class="habit-stat__emoji">${escapeHtml(habit.emoji || "•")}</span><span class="habit-stat__main"><span><strong>${escapeHtml(habit.name)}</strong><b>${rate} %</b></span><i><em style="width:${rate}%"></em></i></span></div>`;
     }).join("") || `<p class="empty-hint">Noch keine Gewohnheiten vorhanden.</p>`;
   }
 
@@ -480,7 +621,7 @@
       ? daily.map((h) => {
           const dn = isToggle(selectedDate, h.id);
           return `<li class="habit-item ${dn ? "is-done" : ""} ${locked ? "is-locked" : ""}" data-habit="${h.id}">
-            <span class="habit-item__emoji">${h.emoji || "•"}</span>
+            <span class="habit-item__emoji">${escapeHtml(h.emoji || "•")}</span>
             <span class="habit-item__name">${escapeHtml(h.name)}</span>
             <span class="check">${CHECK_SVG}</span>
           </li>`;
@@ -504,7 +645,7 @@
         }).join("");
         return `<div class="weekly-item">
           <div class="weekly-item__top">
-            <span class="weekly-item__emoji">${h.emoji || "•"}</span>
+            <span class="weekly-item__emoji">${escapeHtml(h.emoji || "•")}</span>
             <span class="weekly-item__name">${escapeHtml(h.name)}</span>
             <span class="weekly-item__prog ${met ? "is-met" : ""}">${dcount}/${h.target}${met ? " ✓" : ""}</span>
           </div>
@@ -971,6 +1112,12 @@
     activatingUserId = user.id;
     showAuth("Dein Stand wird geladen …");
     try {
+      cloudProfile = await window.MomentumCloud.profile(user.id);
+      if (cloudProfile.status === "blocked") {
+        await window.MomentumCloud.signOut();
+        throw new Error("Dieses Konto ist gesperrt.");
+      }
+      cloudProfile = await window.MomentumCloud.touchProfile(user.id);
       const remote = await window.MomentumCloud.loadState(user.id);
       const remoteState = remote?.state && Object.keys(remote.state).length ? normalizeState(remote.state) : null;
       const accountLocal = loadUserLocal(user.id);
@@ -1011,8 +1158,6 @@
       localStorage.setItem(userStorageKey(user.id), JSON.stringify(state));
       if (shouldUpload) await window.MomentumCloud.saveState(user.id, cloneState(state));
       if (!localStorage.getItem(LEGACY_OWNER_KEY)) localStorage.setItem(LEGACY_OWNER_KEY, user.id);
-      cloudProfile = await window.MomentumCloud.touchProfile(user.id);
-      if (cloudProfile.status === "blocked") throw new Error("Dieses Konto ist gesperrt.");
       cloudIsAdmin = await window.MomentumCloud.isAdmin();
       setCloudStatus("Synchronisiert");
       resetViewState();
@@ -1345,11 +1490,27 @@
     const adminButton = sheet.querySelector("#account-admin");
     if (adminButton) adminButton.onclick = openAdminUsers;
     sheet.querySelector("#account-logout").onclick = async () => {
-      await flushCloudState();
+      const logoutButton = sheet.querySelector("#account-logout");
+      logoutButton.disabled = true;
+      let signOutResult = { everywhere: false };
+      let hardReload = false;
+      try { await flushCloudState(); } catch (_error) { /* Cloud-Retry nicht abwarten. */ }
       closeSheet();
-      await window.MomentumCloud.signOut();
+      try {
+        signOutResult = await window.MomentumCloud.signOut();
+      } catch (error) {
+        console.warn("Globale Abmeldung war nicht erreichbar; lokale Sitzung wird entfernt.", error);
+        hardReload = true;
+      }
+      await purgePrivateBrowserData();
+      clearTimeout(cloudSyncTimer);
+      cloudSaveRequested = false;
       cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
-      showAuth("Du bist abgemeldet.");
+      state = normalizeState(seedState());
+      showAuth(signOutResult.everywhere
+        ? "Du bist auf allen Geräten abgemeldet. Lokale Daten wurden entfernt."
+        : "Auf diesem Gerät sicher abgemeldet. Andere Geräte konnten offline nicht erreicht werden.");
+      if (hardReload) setTimeout(() => location.reload(), 250);
     };
 
     sheet.querySelector("#theme-seg").addEventListener("click", (e) => {
@@ -1466,17 +1627,25 @@
   }
   function importData(e) {
     const file = e.target.files[0]; if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Import fehlgeschlagen: Die Datei ist größer als 5 MB.");
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const s = JSON.parse(reader.result);
         if (!s || !Array.isArray(s.habits)) throw new Error("Ungültige Datei");
+        // Importierte Dateien sind nicht vertrauenswürdig. normalizeState
+        // begrenzt Mengen, Typen, IDs, Datumswerte und sämtliche Freitexte.
         state = normalizeState(s); save(); applyTheme();
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
         selectedDate = defaultSelectedFor(currentMonday);
         closeSheet(); render(); toast("Import erfolgreich");
       } catch (err) { alert("Import fehlgeschlagen: " + err.message); }
+      finally { e.target.value = ""; }
     };
     reader.readAsText(file);
   }
@@ -1699,7 +1868,7 @@
           reload();
         });
       });
-      navigator.serviceWorker.register("service-worker.js?v=22").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=23").then((registration) => registration.update()).catch(() => {});
     }
   }
 

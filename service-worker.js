@@ -1,16 +1,18 @@
 /* Momentum – Service Worker (Offline-Fähigkeit) */
-const CACHE = "momentum-v22";
+const CACHE_PREFIX = "momentum-";
+const CACHE = "momentum-v23";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=22",
-  "./cloud.js?v=2",
-  "./app.js?v=22",
+  "./styles.css?v=23",
+  "./cloud.js?v=3",
+  "./app.js?v=23",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
 ];
+const STATIC_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.location).href));
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -18,7 +20,9 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -30,6 +34,13 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(fetch(req).catch(() => caches.match("./index.html")));
     return;
   }
+
+  // Sicherheitsgrenze: Nur bekannte, gleich-originige App-Dateien cachen.
+  // Authentifizierte Supabase-Antworten und andere Cross-Origin-Daten dürfen
+  // niemals im persistenten PWA-Cache landen.
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin || !STATIC_URLS.has(url.href)) return;
+
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       const copy = res.clone();

@@ -53,7 +53,17 @@
     },
 
     async signOut() {
-      unwrap(await client.auth.signOut());
+      const globalResult = await client.auth.signOut({ scope: "global" });
+      if (!globalResult.error) {
+        localStorage.removeItem("momentum_cloud_session");
+        return { everywhere: true };
+      }
+
+      // Auch ohne Netz muss die Sitzung auf diesem Gerät sicher verschwinden.
+      const localResult = await client.auth.signOut({ scope: "local" });
+      localStorage.removeItem("momentum_cloud_session");
+      if (localResult.error) throw globalResult.error;
+      return { everywhere: false };
     },
 
     async sendPasswordReset(email) {

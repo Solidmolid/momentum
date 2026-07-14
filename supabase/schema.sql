@@ -35,13 +35,33 @@ security definer
 set search_path = ''
 as $$
   select exists (
-    select 1 from public.admin_users
-    where user_id = (select auth.uid())
+    select 1
+    from public.admin_users as admins
+    join public.profiles as profiles on profiles.id = admins.user_id
+    where admins.user_id = (select auth.uid())
+      and profiles.status = 'active'
   );
 $$;
 
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to authenticated;
+
+create or replace function public.is_active_user()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = (select auth.uid())
+      and status = 'active'
+  );
+$$;
+
+revoke all on function public.is_active_user() from public;
+grant execute on function public.is_active_user() to authenticated;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -94,33 +114,33 @@ drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own"
   on public.profiles for update
   to authenticated
-  using ((select auth.uid()) = id)
-  with check ((select auth.uid()) = id);
+  using ((select auth.uid()) = id and (select public.is_active_user()))
+  with check ((select auth.uid()) = id and (select public.is_active_user()));
 
 drop policy if exists "user_states_select_own" on public.user_states;
 create policy "user_states_select_own"
   on public.user_states for select
   to authenticated
-  using ((select auth.uid()) = user_id);
+  using ((select auth.uid()) = user_id and (select public.is_active_user()));
 
 drop policy if exists "user_states_insert_own" on public.user_states;
 create policy "user_states_insert_own"
   on public.user_states for insert
   to authenticated
-  with check ((select auth.uid()) = user_id);
+  with check ((select auth.uid()) = user_id and (select public.is_active_user()));
 
 drop policy if exists "user_states_update_own" on public.user_states;
 create policy "user_states_update_own"
   on public.user_states for update
   to authenticated
-  using ((select auth.uid()) = user_id)
-  with check ((select auth.uid()) = user_id);
+  using ((select auth.uid()) = user_id and (select public.is_active_user()))
+  with check ((select auth.uid()) = user_id and (select public.is_active_user()));
 
 drop policy if exists "user_states_delete_own" on public.user_states;
 create policy "user_states_delete_own"
   on public.user_states for delete
   to authenticated
-  using ((select auth.uid()) = user_id);
+  using ((select auth.uid()) = user_id and (select public.is_active_user()));
 
 revoke all on public.profiles from anon, authenticated;
 revoke all on public.user_states from anon, authenticated;
