@@ -1,11 +1,11 @@
 /* Momentum – Service Worker (Offline-Fähigkeit) */
-const CACHE = "momentum-v14";
+const CACHE = "momentum-v15";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=14",
+  "./styles.css?v=15",
   "./cloud.js?v=2",
-  "./app.js?v=14",
+  "./app.js?v=15",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

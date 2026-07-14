@@ -15,7 +15,7 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Geschwungene Fortschrittsanalyse seit dem Start sowie für Woche, 30 Tage und 12 Monate (`S · W · M · J`)
 - Gemeinsame Gewichtung von Tages- und Wochenzielen mit klarer Gesamtquote
 - Persönliche Durchzieh-Rate für jede tägliche Gewohnheit
-- Tage vor dem persönlichen Startpunkt werden nicht gewertet; ältere Daten bleiben beim Verschieben des Starts erhalten
+- Tage vor dem persönlichen Startpunkt bleiben rückwirkend bearbeitbar; nur die `S`-Auswertung beginnt am gewählten Starttag
 
 **Tasks**
 - Kurzfristige & langfristige Aufgaben, abhakbar und mit Fälligkeitsdatum
