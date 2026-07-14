@@ -7,7 +7,7 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "4.1";
+  const APP_VERSION = "4.2";
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const HEALTH_FIELDS = [
@@ -17,6 +17,7 @@
     { key: "fat", label: "Fett", short: "Fett", unit: "g" },
     { key: "steps", label: "Schritte", short: "Schritte", unit: "" },
   ];
+  const NUTRITION_FIELDS = HEALTH_FIELDS.filter((field) => field.key !== "steps");
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 
@@ -45,7 +46,7 @@
     const startDate = todayStr();
     const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
-      version: 4,
+      version: 5,
       meta: { updatedAt: Date.now() },
       settings: { startDate, startMonday, theme: "light" },
       habits: [
@@ -97,10 +98,35 @@
     const rawHealthEntries = s.health.entries && typeof s.health.entries === "object" ? s.health.entries : {};
     s.health.entries = Object.fromEntries(Object.entries(rawHealthEntries).map(([date, rawEntry]) => {
       const entry = {};
-      HEALTH_FIELDS.forEach((field) => {
-        const value = Number(rawEntry?.[field.key]);
-        if (rawEntry?.[field.key] !== "" && Number.isFinite(value) && value >= 0) entry[field.key] = value;
+      const rawFoods = Array.isArray(rawEntry?.foods) ? rawEntry.foods : [];
+      entry.foods = rawFoods.map((rawFood, index) => {
+        const food = {
+          id: String(rawFood?.id || `${date}-${index}`),
+          name: String(rawFood?.name || "Eintrag").slice(0, 80),
+          time: /^\d{2}:\d{2}$/.test(String(rawFood?.time || "")) ? String(rawFood.time) : "",
+          createdAt: Number(rawFood?.createdAt) || 0,
+        };
+        NUTRITION_FIELDS.forEach((field) => {
+          const value = Number(rawFood?.[field.key]);
+          if (rawFood?.[field.key] !== "" && Number.isFinite(value) && value >= 0) food[field.key] = value;
+        });
+        return food;
       });
+      if (!entry.foods.length) {
+        const legacyFood = { id: `legacy-${date}`, name: "Bisheriger Tagesstand", time: "", createdAt: 0 };
+        let hasLegacyNutrition = false;
+        NUTRITION_FIELDS.forEach((field) => {
+          const value = Number(rawEntry?.[field.key]);
+          if (rawEntry?.[field.key] !== "" && rawEntry?.[field.key] !== undefined && Number.isFinite(value) && value >= 0) {
+            legacyFood[field.key] = value;
+            hasLegacyNutrition = true;
+          }
+        });
+        if (hasLegacyNutrition) entry.foods.push(legacyFood);
+      }
+      const steps = Number(rawEntry?.steps);
+      if (rawEntry?.steps !== "" && rawEntry?.steps !== undefined && Number.isFinite(steps) && steps >= 0) entry.steps = steps;
+      if (!entry.foods.length) delete entry.foods;
       return [date, entry];
     }).filter(([, entry]) => Object.keys(entry).length));
     s.events.forEach((event) => {
@@ -108,7 +134,7 @@
       event.endTime = event.endTime || (event.startTime ? defaultEndTime(event.startTime) : "");
       delete event.time;
     });
-    s.version = 4;
+    s.version = 5;
     return s;
   }
   const stateRevision = (value) => Number(value?.meta?.updatedAt) || 0;
@@ -138,7 +164,12 @@
     merged.events = mergeById(base.events, preferred.events);
     merged.health.goals = { ...base.health.goals, ...preferred.health.goals };
     merged.health.entries = { ...base.health.entries };
-    Object.entries(preferred.health.entries || {}).forEach(([date, entry]) => { merged.health.entries[date] = { ...(merged.health.entries[date] || {}), ...entry }; });
+    Object.entries(preferred.health.entries || {}).forEach(([date, entry]) => {
+      const baseEntry = merged.health.entries[date] || {};
+      merged.health.entries[date] = { ...baseEntry, ...entry };
+      const foods = mergeById(baseEntry.foods, entry.foods);
+      if (foods.length) merged.health.entries[date].foods = foods;
+    });
     merged.meta = { updatedAt: Math.max(Date.now(), stateRevision(base), stateRevision(preferred)) + 1, mergedLegacy: true };
     return normalizeState(merged);
   }
@@ -592,11 +623,19 @@
   /* ---------- Gesundheit ---------- */
   const healthField = (key) => HEALTH_FIELDS.find((field) => field.key === key) || HEALTH_FIELDS[0];
   const healthEntry = (ds) => state.health.entries[ds] || {};
+  const healthFoods = (ds) => Array.isArray(healthEntry(ds).foods) ? healthEntry(ds).foods : [];
   const healthValue = (ds, key) => {
-    const value = Number(healthEntry(ds)[key]);
+    if (key !== "steps") return healthFoods(ds).reduce((sum, food) => {
+      const value = Number(food[key]);
+      return sum + (Number.isFinite(value) && value >= 0 ? value : 0);
+    }, 0);
+    const value = Number(healthEntry(ds).steps);
     return Number.isFinite(value) && value >= 0 ? value : 0;
   };
-  const formatHealthNumber = (value) => Math.round(value).toLocaleString("de-DE");
+  const healthRecorded = (ds, key) => key === "steps"
+    ? Object.prototype.hasOwnProperty.call(healthEntry(ds), "steps")
+    : healthFoods(ds).some((food) => Object.prototype.hasOwnProperty.call(food, key));
+  const formatHealthNumber = (value) => Number(value || 0).toLocaleString("de-DE", { maximumFractionDigits: 1 });
 
   function healthTrendData() {
     const today = parseDate(todayStr());
@@ -605,7 +644,7 @@
     const metric = healthMetric;
     const dateSeries = (dates) => ({
       values: dates.map((date) => healthValue(dateStr(date), metric)),
-      recorded: dates.map((date) => Object.prototype.hasOwnProperty.call(healthEntry(dateStr(date)), metric)),
+      recorded: dates.map((date) => healthRecorded(dateStr(date), metric)),
     });
     if (healthRange === "start") {
       const start = parseDate(state.settings.startDate);
@@ -642,7 +681,7 @@
       if (monthStart > cappedEnd) return { value: 0, recorded: false };
       const count = Math.floor((cappedEnd - monthStart) / 864e5) + 1;
       const values = Array.from({ length: count }, (_, index) => addDays(monthStart, index))
-        .filter((date) => Object.prototype.hasOwnProperty.call(healthEntry(dateStr(date)), metric))
+        .filter((date) => healthRecorded(dateStr(date), metric))
         .map((date) => healthValue(dateStr(date), metric));
       return { value: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0, recorded: values.length > 0 };
     });
@@ -684,26 +723,38 @@
     const earliest = dateStr(addDays(new Date(), -370));
     const selected = parseDate(healthSelected);
     const entry = healthEntry(healthSelected);
-    const filled = HEALTH_FIELDS.filter((field) => entry[field.key] !== undefined && entry[field.key] !== "").length;
+    const foods = [...healthFoods(healthSelected)].sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99") || (a.createdAt || 0) - (b.createdAt || 0));
     $("#health-date").value = healthSelected;
     $("#health-date").max = today;
     $("#health-date").min = earliest;
     $("#health-prev").disabled = healthSelected <= earliest;
     $("#health-next").disabled = healthSelected >= today;
     $("#health-day-title").textContent = healthSelected === today ? "Heute" : `${WD[(selected.getDay() + 6) % 7]}, ${selected.getDate()}. ${MONTHS[selected.getMonth()]}`;
-    $("#health-day-summary").textContent = `${filled}/5 Werte eingetragen`;
+    $("#health-day-summary").textContent = foods.length ? `${foods.length} ${foods.length === 1 ? "Eintrag" : "Einträge"} · ${formatHealthNumber(healthValue(healthSelected, "calories"))} kcal` : "Noch kein Essen eingetragen";
     $("#health-fields").innerHTML = HEALTH_FIELDS.map((field) => {
-      const value = entry[field.key] ?? "";
+      const value = healthValue(healthSelected, field.key);
       const goal = state.health.goals[field.key] || 0;
-      const pct = goal ? Math.min(100, Math.round((Number(value || 0) / goal) * 100)) : 0;
-      const goalText = goal ? `${formatHealthNumber(Number(value || 0))} / ${formatHealthNumber(goal)} ${field.unit}`.trim() : "Kein Ziel gesetzt";
+      const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+      const goalText = goal ? `${formatHealthNumber(value)} / ${formatHealthNumber(goal)} ${field.unit}`.trim() : "Kein Ziel gesetzt";
+      const valueMarkup = field.key === "steps"
+        ? `<span class="health-field__value"><input type="number" min="0" step="1" inputmode="numeric" autocomplete="off" name="momentum-health-steps" data-health-field="steps" value="${entry.steps ?? ""}" placeholder="0"><b>${field.unit}</b></span>`
+        : `<span class="health-field__value health-field__value--total"><strong>${formatHealthNumber(value)}</strong><b>${field.unit}</b></span>`;
       return `<label class="health-field health-field--${field.key}">
         <span class="health-field__label">${field.label}</span>
-        <span class="health-field__value"><input type="number" min="0" step="1" inputmode="decimal" autocomplete="off" name="momentum-health-${field.key}" data-health-field="${field.key}" value="${value}" placeholder="0"><b>${field.unit}</b></span>
+        ${valueMarkup}
         <span class="health-field__goal">${goalText}</span>
         <i><em style="width:${pct}%"></em></i>
       </label>`;
     }).join("");
+    $("#health-food-table").innerHTML = foods.length ? `<div class="health-food-table-wrap"><table class="health-food-table">
+      <thead><tr><th>Essen</th><th>kcal</th><th>E</th><th>KH</th><th>F</th><th></th></tr></thead>
+      <tbody>${foods.map((food) => `<tr>
+        <td><button class="health-food-name" data-edit-health-food="${food.id}"><strong>${escapeHtml(food.name)}</strong><small>${food.time || "Ohne Uhrzeit"}</small></button></td>
+        <td>${formatHealthNumber(food.calories)}</td><td>${formatHealthNumber(food.protein)}</td><td>${formatHealthNumber(food.carbs)}</td><td>${formatHealthNumber(food.fat)}</td>
+        <td><button class="health-food-edit" data-edit-health-food="${food.id}" aria-label="${escapeHtml(food.name)} bearbeiten">•••</button></td>
+      </tr>`).join("")}</tbody>
+      <tfoot><tr><th>Gesamt</th><th>${formatHealthNumber(healthValue(healthSelected, "calories"))}</th><th>${formatHealthNumber(healthValue(healthSelected, "protein"))}</th><th>${formatHealthNumber(healthValue(healthSelected, "carbs"))}</th><th>${formatHealthNumber(healthValue(healthSelected, "fat"))}</th><th></th></tr></tfoot>
+    </table></div>` : `<div class="health-food-empty"><strong>Noch nichts eingetragen</strong><span>Füge eine Mahlzeit, einen Snack oder zum Beispiel einen Proteinshake hinzu.</span></div>`;
     $("#health-metric").querySelectorAll("button").forEach((button) => button.classList.toggle("is-active", button.dataset.healthMetric === healthMetric));
     $("#health-range").querySelectorAll("button").forEach((button) => button.classList.toggle("is-active", button.dataset.healthRange === healthRange));
     const field = healthField(healthMetric);
@@ -716,7 +767,66 @@
     $("#health-chart").innerHTML = buildHealthChart(data, state.health.goals[healthMetric] || 0);
     const labelIndexes = healthRange === "week" ? data.labels.map((_, index) => index) : data.labels.map((label, index) => label ? index : -1).filter((index) => index >= 0);
     $("#health-axis").innerHTML = labelIndexes.map((index) => `<span style="left:${data.labels.length <= 1 ? 0 : (index / (data.labels.length - 1)) * 100}%">${data.labels[index]}</span>`).join("");
+    const historyDates = Object.keys(state.health.entries)
+      .filter((date) => date <= today && (healthFoods(date).length || healthRecorded(date, "steps")))
+      .sort().reverse().slice(0, 8);
+    $("#health-day-history").innerHTML = historyDates.length ? historyDates.map((date) => `<button data-health-history-date="${date}" class="health-history-row ${date === healthSelected ? "is-active" : ""}">
+      <span><strong>${date === today ? "Heute" : formatLongDate(date)}</strong><small>${healthFoods(date).length} ${healthFoods(date).length === 1 ? "Eintrag" : "Einträge"}</small></span>
+      <span><b>${formatHealthNumber(healthValue(date, "calories"))} kcal</b><small>E ${formatHealthNumber(healthValue(date, "protein"))} · KH ${formatHealthNumber(healthValue(date, "carbs"))} · F ${formatHealthNumber(healthValue(date, "fat"))}</small></span>
+    </button>`).join("") : `<p class="health-history-empty">Deine vergangenen Tage erscheinen hier, sobald du etwas eingetragen hast.</p>`;
     if (screen === "health") $("#appbar-sub").textContent = healthSelected === today ? "Dein Tagesstand" : formatLongDate(healthSelected);
+  }
+
+  function openHealthFoodEditor(food) {
+    const isNew = !food;
+    const now = new Date();
+    const item = food || { name: "", time: healthSelected === todayStr() ? `${pad(now.getHours())}:${pad(now.getMinutes())}` : "", calories: "", protein: "", carbs: "", fat: "" };
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">${formatLongDate(healthSelected)}</span><div class="sheet__title">${isNew ? "Essen eintragen" : "Eintrag bearbeiten"}</div></div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <div class="field"><label for="food-name">Mahlzeit oder Lebensmittel</label><input class="input" id="food-name" maxlength="80" value="${escapeHtml(item.name || "")}" placeholder="z. B. Frühstück oder Proteinshake" autocomplete="off"></div>
+      <div class="field"><label for="food-time">Uhrzeit (optional)</label><input class="input" id="food-time" type="time" value="${escapeHtml(item.time || "")}"></div>
+      <div class="health-food-fields">
+        <label class="field"><span>Kalorien (kcal)</span><input class="input" id="food-calories" type="number" min="0" step="1" inputmode="decimal" value="${item.calories ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Eiweiß (g)</span><input class="input" id="food-protein" type="number" min="0" step="0.1" inputmode="decimal" value="${item.protein ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Kohlenhydrate (g)</span><input class="input" id="food-carbs" type="number" min="0" step="0.1" inputmode="decimal" value="${item.carbs ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Fett (g)</span><input class="input" id="food-fat" type="number" min="0" step="0.1" inputmode="decimal" value="${item.fat ?? ""}" placeholder="0"></label>
+      </div>
+      <p class="field-hint">Du kannst auch nur einen Wert eintragen, zum Beispiel 30 g Eiweiß für einen Shake.</p>
+      <button class="btn" id="save-health-food">${isNew ? "Hinzufügen" : "Änderungen speichern"}</button>
+      ${isNew ? "" : `<button class="btn btn--danger" id="delete-health-food">Eintrag löschen</button>`}`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#save-health-food").onclick = () => {
+      const foodItem = {
+        id: item.id || uid(),
+        name: sheet.querySelector("#food-name").value.trim() || "Eintrag",
+        time: sheet.querySelector("#food-time").value,
+        createdAt: item.createdAt || Date.now(),
+      };
+      NUTRITION_FIELDS.forEach((field) => {
+        const input = sheet.querySelector(`#food-${field.key}`);
+        if (input.value !== "") {
+          const value = Number(input.value);
+          foodItem[field.key] = Number.isFinite(value) && value >= 0 ? value : 0;
+        }
+      });
+      if (!NUTRITION_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(foodItem, field.key))) {
+        toast("Trage mindestens einen Wert ein");
+        return;
+      }
+      const day = { ...healthEntry(healthSelected), foods: [...healthFoods(healthSelected)] };
+      const existingIndex = day.foods.findIndex((entryFood) => entryFood.id === foodItem.id);
+      if (existingIndex >= 0) day.foods[existingIndex] = foodItem;
+      else day.foods.push(foodItem);
+      state.health.entries[healthSelected] = day;
+      save(); closeSheet(); renderHealth(); toast(isNew ? "Eintrag hinzugefügt" : "Eintrag gespeichert");
+    };
+    if (!isNew) sheet.querySelector("#delete-health-food").onclick = () => {
+      const day = { ...healthEntry(healthSelected), foods: healthFoods(healthSelected).filter((entryFood) => entryFood.id !== item.id) };
+      if (!day.foods.length) delete day.foods;
+      if (Object.keys(day).length) state.health.entries[healthSelected] = day;
+      else delete state.health.entries[healthSelected];
+      save(); closeSheet(); renderHealth(); toast("Eintrag gelöscht");
+    };
   }
 
   function openHealthGoals() {
@@ -1451,6 +1561,20 @@
       renderHealth();
     });
     $("#health-goals").addEventListener("click", openHealthGoals);
+    $("#add-health-food").addEventListener("click", () => openHealthFoodEditor(null));
+    $("#health-food-table").addEventListener("click", (e) => {
+      const button = e.target.closest("[data-edit-health-food]");
+      if (!button) return;
+      const food = healthFoods(healthSelected).find((item) => item.id === button.dataset.editHealthFood);
+      if (food) openHealthFoodEditor(food);
+    });
+    $("#health-day-history").addEventListener("click", (e) => {
+      const button = e.target.closest("[data-health-history-date]");
+      if (!button) return;
+      healthSelected = button.dataset.healthHistoryDate;
+      renderHealth();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
     const storeHealthInput = (input) => {
       const entry = { ...(state.health.entries[healthSelected] || {}) };
       if (input.value === "") delete entry[input.dataset.healthField];
@@ -1575,7 +1699,7 @@
           reload();
         });
       });
-      navigator.serviceWorker.register("service-worker.js?v=19").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=22").then((registration) => registration.update()).catch(() => {});
     }
   }
 

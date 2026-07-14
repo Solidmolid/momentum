@@ -16,7 +16,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=19" />
+<link rel="stylesheet" href="styles.css?v=22" />
 
 <section id="auth-screen" class="auth-screen" aria-live="polite">
   <div class="auth-card">
@@ -196,9 +196,14 @@
       <div class="card health-day-card">
         <div class="health-day-card__head">
           <div><span class="trend-card__eyebrow">Tageswerte</span><h2 id="health-day-title">Heute</h2></div>
-          <span id="health-day-summary">0/5 Werte eingetragen</span>
+          <span id="health-day-summary">Noch kein Essen eingetragen</span>
         </div>
         <div id="health-fields" class="health-fields"></div>
+        <div class="health-food-head">
+          <div><strong>Was du gegessen hast</strong><span>Die Werte werden automatisch addiert.</span></div>
+          <button id="add-health-food" class="btn btn--compact">＋ Eintrag</button>
+        </div>
+        <div id="health-food-table"></div>
       </div>
 
       <div class="card health-history-card">
@@ -214,6 +219,10 @@
         <div id="health-chart" class="chart health-chart"></div>
         <div id="health-axis" class="trend-axis"></div>
         <p class="health-chart-note">Eine gestrichelte Linie zeigt dein eingestelltes Ziel.</p>
+        <div class="health-day-history">
+          <div class="health-day-history__title"><strong>Letzte Tage</strong><span>Antippen, um den Tag zu öffnen</span></div>
+          <div id="health-day-history"></div>
+        </div>
       </div>
 
       <p class="health-privacy">Diese Werte gehören nur zu deinem Konto und werden wie deine Gewohnheiten synchronisiert.</p>
@@ -246,4 +255,4 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <script src="cloud.js?v=2" defer></script>
-<script src="app.js?v=19" defer></script>
+<script src="app.js?v=22" defer></script>

@@ -31,9 +31,13 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Termine und Tasks mit einem Tipp in Google Kalender übernehmen
 
 **Gesundheit**
-- Kalorien, Eiweiß, Kohlenhydrate, Fett und Schritte täglich eintragen
+- Mahlzeiten, Lebensmittel und einzelne Nährwerte mit Uhrzeit eintragen
+- Kalorien, Eiweiß, Kohlenhydrate und Fett werden automatisch zum Tagesstand addiert
+- Ernährungstabelle pro Tag mit Bearbeiten, Löschen und Gesamtsumme
+- Schritte separat eintragen
 - Eigene Tagesziele festlegen und den Fortschritt direkt sehen
 - Persönlicher Verlauf für Start, Woche, 30 Tage und 12 Monate (`S · W · M · J`)
+- Tageshistorie zum schnellen Öffnen vergangener Ernährungseinträge
 - Gesundheitswerte werden pro Benutzer getrennt in der Cloud synchronisiert
 
 **Sonstiges**
