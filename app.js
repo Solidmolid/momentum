@@ -7,9 +7,9 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "5.0.2";
+  const APP_VERSION = "5.0.3";
   // Muss mit CACHE in service-worker.js übereinstimmen.
-  const APP_CACHE = "momentum-v30";
+  const APP_CACHE = "momentum-v31";
   const STATE_VERSION = 7;
   const LOCAL_PREVIEW = typeof location !== "undefined"
     && ["localhost", "127.0.0.1"].includes(location.hostname)
@@ -2227,21 +2227,38 @@
     };
   }
 
+  // Direkt nach dem Start kann der Sitzungs-Refresh kurz "keine Sitzung"
+  // melden, obwohl der Benutzer angemeldet ist. Solange bleibt der Splash
+  // stehen, statt das Login-Formular aufblitzen zu lassen.
+  let authBootGraceUntil = 0;
+  let authBootGraceTimer = null;
+
+  function showAuthWithBootGrace() {
+    const remaining = authBootGraceUntil - Date.now();
+    if (remaining <= 0) { showAuth(); return; }
+    clearTimeout(authBootGraceTimer);
+    authBootGraceTimer = setTimeout(() => {
+      const stillOnSplash = $("#auth-screen").hidden && $("#app").hidden;
+      if (!cloudUser && !activatingUserId && stillOnSplash) showAuth();
+    }, remaining);
+  }
+
   async function initCloud() {
     if (!window.MomentumCloud?.available) {
       showAuth(window.MomentumCloud?.error || "Die Cloud-Verbindung ist gerade nicht erreichbar.", true);
       return;
     }
+    authBootGraceUntil = Date.now() + 2500;
     window.MomentumCloud.onAuthChange((session) => {
       if (!session) {
         cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
-        showAuth();
+        showAuthWithBootGrace();
       } else if (cloudUser?.id !== session.user.id) activateSession(session.user);
     });
     try {
       const session = await window.MomentumCloud.session();
       if (session) await activateSession(session.user);
-      else showAuth();
+      else showAuthWithBootGrace();
     } catch (error) { showAuth(friendlyAuthError(error), true); }
   }
 
@@ -3252,7 +3269,7 @@
           }
         })();
       });
-      navigator.serviceWorker.register("service-worker.js?v=30").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=31").then((registration) => registration.update()).catch(() => {});
     }
   }
 
