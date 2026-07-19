@@ -2043,13 +2043,34 @@
     setAuthMessage("");
   }
 
+  // Beim Start bleibt der Splash sichtbar, bis klar ist, ob eine Sitzung
+  // existiert – angemeldete Benutzer sehen so nie das Login-Formular.
+  function showSplash(message) {
+    const splash = document.querySelector("#splash-screen");
+    if (!splash) return;
+    splash.hidden = false;
+    if (message) {
+      const status = splash.querySelector("#splash-status");
+      if (status) status.textContent = message;
+    }
+    $("#auth-screen").hidden = true;
+    $("#app").hidden = true;
+  }
+
+  function hideSplash() {
+    const splash = document.querySelector("#splash-screen");
+    if (splash) splash.hidden = true;
+  }
+
   function showAuth(message, isError) {
+    hideSplash();
     $("#app").hidden = true;
     $("#auth-screen").hidden = false;
     setAuthMessage(message || "", isError);
   }
 
   function showApp() {
+    hideSplash();
     $("#auth-screen").hidden = true;
     $("#app").hidden = false;
   }
@@ -2066,7 +2087,7 @@
   async function activateSession(user) {
     if (!user || activatingUserId === user.id) return;
     activatingUserId = user.id;
-    showAuth("Dein Stand wird geladen …");
+    showSplash("Dein Stand wird geladen …");
     const accountLocalRaw = loadUserLocal(user.id);
     const accountLocal = accountLocalRaw ? normalizeState(accountLocalRaw) : null;
     try {

@@ -20,9 +20,14 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=28" />
+<link rel="stylesheet" href="styles.css?v=29" />
 
-<section id="auth-screen" class="auth-screen" aria-live="polite">
+<div id="splash-screen" class="splash-screen" role="status" aria-live="polite">
+  <div class="splash-brand"><span class="brand-mark">M</span><span class="splash-name">Momentum</span></div>
+  <span class="splash-status" id="splash-status">Wird gestartet …</span>
+</div>
+
+<section id="auth-screen" class="auth-screen" aria-live="polite" hidden>
   <div class="auth-card">
     <div class="auth-brand"><span class="brand-mark">M</span><span>Momentum</span></div>
     <span class="auth-eyebrow">Dein persönlicher Bereich</span>

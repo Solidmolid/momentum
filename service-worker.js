@@ -4,7 +4,7 @@ const CACHE = "momentum-v29";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=28",
+  "./styles.css?v=29",
   "./vendor/supabase-2.110.3.js",
   "./cloud.js?v=5",
   "./pomodoro.js?v=2",
