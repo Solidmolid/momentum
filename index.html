@@ -1,11 +1,11 @@
 <meta charset="UTF-8" />
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://uytacdogqercenlgbpgb.supabase.co wss://uytacdogqercenlgbpgb.supabase.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'"
+  content="default-src 'self'; script-src 'self'; connect-src 'self' https://uytacdogqercenlgbpgb.supabase.co wss://uytacdogqercenlgbpgb.supabase.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'"
 />
 <meta
   name="viewport"
-  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  content="width=device-width, initial-scale=1.0, viewport-fit=cover"
 />
 <meta name="description" content="Momentum – deine Gewohnheiten & Tasks an einem Ort." />
 
@@ -20,7 +20,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 
 <title>Momentum</title>
-<link rel="stylesheet" href="styles.css?v=24" />
+<link rel="stylesheet" href="styles.css?v=28" />
 
 <section id="auth-screen" class="auth-screen" aria-live="polite">
   <div class="auth-card">
@@ -231,37 +231,117 @@
 
       <p class="health-privacy">Diese Werte gehören nur zu deinem Konto und werden wie deine Gewohnheiten synchronisiert.</p>
     </section>
+
+    <!-- === SCREEN: FOKUS / POMODORO === -->
+    <section id="screen-focus" class="screen focus-screen" hidden>
+      <div class="card focus-card">
+        <div class="focus-card__head">
+          <div>
+            <span class="trend-card__eyebrow">Pomodoro</span>
+            <h1 id="focus-phase-title">Fokus</h1>
+          </div>
+          <button id="focus-settings" class="iconbtn" aria-label="Pomodoro einstellen">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+          </button>
+        </div>
+        <div id="focus-timer-ring" class="focus-timer-ring" role="timer" aria-live="off">
+          <div class="focus-timer-ring__inner">
+            <strong id="focus-time">25:00</strong>
+            <span id="focus-round">Runde 1 von 4</span>
+          </div>
+        </div>
+        <p id="focus-status-copy" class="focus-status-copy" role="status" aria-live="polite" aria-atomic="true">Bereit für eine konzentrierte Einheit.</p>
+        <div class="focus-controls">
+          <button id="focus-reset" class="focus-control focus-control--secondary" aria-label="Timer zurücksetzen">↺</button>
+          <button id="focus-toggle" class="focus-control focus-control--primary">Start</button>
+          <button id="focus-skip" class="focus-control focus-control--secondary" aria-label="Phase überspringen">↠</button>
+        </div>
+      </div>
+
+      <div class="focus-stats">
+        <div class="card focus-stat"><span>Heute</span><strong id="focus-today-minutes">0 Min.</strong><small id="focus-today-sessions">0 Einheiten</small></div>
+        <div class="card focus-stat"><span>Diese Woche</span><strong id="focus-week-minutes">0 Min.</strong><small id="focus-week-sessions">0 Einheiten</small></div>
+      </div>
+
+      <div class="card focus-week-card">
+        <div class="card__title"><span id="focus-week-chart-title">Fokusverlauf</span><span class="card__hint">Letzte 7 Tage</span></div>
+        <div id="focus-week-chart" class="focus-week-chart" role="group" aria-labelledby="focus-week-chart-title" aria-describedby="focus-week-chart-help"></div>
+        <p id="focus-week-chart-help" class="chart-accessibility-note">Die Zahl über jedem Balken zeigt deine Fokusminuten an diesem Tag; ohne Zahl waren es null Minuten.</p>
+      </div>
+
+      <div class="card focus-history-card">
+        <div class="card__title"><span>Letzte Einheiten</span></div>
+        <div id="focus-history" class="focus-history"></div>
+      </div>
+    </section>
+
+    <!-- === SCREEN: SKIZZEN === -->
+    <section id="screen-sketches" class="screen sketches-screen" hidden>
+      <div class="sketches-toolbar">
+        <button id="add-sketch" class="btn btn--compact">＋ Neue Skizze</button>
+        <label class="sketch-sort"><span>Sortieren</span><select id="sketch-sort" class="select" aria-label="Skizzen sortieren"><option value="updated">Zuletzt bearbeitet</option><option value="date">Datum</option><option value="name">Name</option></select></label>
+      </div>
+      <div class="sketch-library-head">
+        <div><span class="trend-card__eyebrow">Deine Ideen</span><h1>Skizzen</h1></div>
+        <span id="sketch-count">0 Skizzen</span>
+      </div>
+      <div id="sketch-sync-status" class="sketch-sync-status" role="status">Skizzen werden geladen …</div>
+      <div id="sketch-grid" class="sketch-grid"></div>
+    </section>
   </main>
 
   <!-- Bottom Tab Bar -->
-  <nav class="tabbar">
-    <button class="tab is-active" data-screen="habits">
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
-      <span>Gewohnheiten</span>
-    </button>
-    <button class="tab" data-screen="tasks">
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <span>Tasks</span>
-    </button>
-    <button class="tab" data-screen="calendar">
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
-      <span>Kalender</span>
-    </button>
-    <button class="tab" data-screen="health">
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
-      <span>Gesundheit</span>
-    </button>
-  </nav>
+  <nav id="tabbar" class="tabbar" aria-label="Bereiche"></nav>
 
   <!-- Modal-Container (per JS befüllt) -->
   <div id="modal-root"></div>
+
+  <!-- Vollbild-Skizzeneditor -->
+  <section id="sketch-editor" class="sketch-editor" aria-label="Skizzeneditor" hidden>
+    <header class="sketch-editor__header">
+      <button id="sketch-editor-close" class="sketch-editor__back" aria-label="Skizze schließen">‹</button>
+      <div class="sketch-editor__title"><strong id="sketch-editor-title">Skizze</strong><span id="sketch-save-status">Gespeichert</span></div>
+      <button id="sketch-editor-menu" class="sketch-editor__menu" aria-label="Skizzenoptionen">•••</button>
+    </header>
+    <div id="sketch-toolbar" class="sketch-toolbar" role="toolbar" aria-label="Zeichenwerkzeuge">
+      <button data-sketch-tool="select" aria-label="Auswählen">↖</button>
+      <button data-sketch-tool="pen" class="is-active" aria-label="Stift">✎</button>
+      <button data-sketch-tool="marker" aria-label="Marker">▰</button>
+      <button data-sketch-tool="eraser" aria-label="Radierer">⌫</button>
+      <button data-sketch-tool="text" aria-label="Text einfügen">T</button>
+      <button data-sketch-tool="pan" aria-label="Zeichenfläche bewegen">✋</button>
+      <span class="sketch-toolbar__divider"></span>
+      <label class="sketch-color"><input id="sketch-color" type="color" value="#111827" aria-label="Stiftfarbe"></label>
+      <label class="sketch-width"><input id="sketch-width" type="range" min="1" max="32" value="5" aria-label="Strichstärke"></label>
+      <button id="sketch-pencil-only" aria-label="Nur mit Stift zeichnen" aria-pressed="false" title="Nur mit Stift zeichnen">P</button>
+    </div>
+    <div id="sketch-stage" class="sketch-stage">
+      <canvas id="sketch-canvas" role="img" aria-label="Zeichenfläche der geöffneten Skizze" aria-describedby="sketch-canvas-help"></canvas>
+      <p id="sketch-canvas-help" class="sr-only">Zeichne mit Finger, Stift oder Maus. Wähle oben ein Werkzeug. Mit zwei Fingern kannst du die Zeichenfläche verschieben und vergrößern.</p>
+    </div>
+    <div class="sketch-editor__actions" role="toolbar" aria-label="Skizze bearbeiten und vergrößern">
+      <button id="sketch-undo" aria-label="Rückgängig" disabled>↶</button>
+      <button id="sketch-redo" aria-label="Wiederholen" disabled>↷</button>
+      <button id="sketch-zoom-out" aria-label="Verkleinern">−</button>
+      <button id="sketch-zoom-fit" aria-label="Skizze einpassen">Einpassen</button>
+      <button id="sketch-zoom-in" aria-label="Vergrößern">＋</button>
+      <button id="sketch-delete-selection" aria-label="Auswahl löschen" disabled>🗑</button>
+    </div>
+    <div id="sketch-text-panel" class="sketch-text-panel" hidden>
+      <label for="sketch-text-input">Text</label>
+      <textarea id="sketch-text-input" maxlength="500" rows="3" placeholder="Text eingeben"></textarea>
+      <div><button id="sketch-text-cancel">Abbrechen</button><button id="sketch-text-apply">Einfügen</button></div>
+    </div>
+  </section>
 </div>
 
 <script
-  src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.3/dist/umd/supabase.js"
+  src="vendor/supabase-2.110.3.js"
   integrity="sha384-sihuiVHG7vyEIuePVbLI4QpHu1dbhCZe4Zqp0FuqnFeEnyIhF3koyXoBZyfbFsYs"
   crossorigin="anonymous"
   defer
 ></script>
-<script src="cloud.js?v=3" defer></script>
-<script src="app.js?v=24" defer></script>
+<script src="cloud.js?v=5" defer></script>
+<script src="pomodoro.js?v=2" defer></script>
+<script src="sketch.js?v=2" defer></script>
+<script src="app.js?v=28" defer></script>

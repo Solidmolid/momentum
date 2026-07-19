@@ -30,14 +30,14 @@ function appSecurityApi() {
   const deletedCaches = [];
   const deletedRequests = [];
   const currentRequests = [
-    { url: "http://127.0.0.1:8124/app.js?v=24" },
+    { url: "http://127.0.0.1:8124/app.js?v=28" },
     { url: "https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states" },
   ];
   const caches = {
-    async keys() { return ["momentum-v22", "momentum-v23", "momentum-v24", "another-app-v1"]; },
+    async keys() { return ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27", "momentum-v28", "another-app-v1"]; },
     async delete(name) { deletedCaches.push(name); return true; },
     async open(name) {
-      assert.equal(name, "momentum-v24");
+      assert.equal(name, "momentum-v28");
       return {
         async keys() { return currentRequests; },
         async delete(request) { deletedRequests.push(request.url); return true; },
@@ -118,7 +118,7 @@ async function testStateSanitizingAndLogoutPurge() {
 
   await api.purgePrivateBrowserData();
   assert.deepEqual([...values.entries()], [["unrelated", "keep"]]);
-  assert.deepEqual(deletedCaches, ["momentum-v22", "momentum-v23"]);
+  assert.deepEqual(deletedCaches, ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27"]);
   assert.deepEqual(deletedRequests, ["https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"]);
 }
 
@@ -160,14 +160,30 @@ function testServiceWorkerCacheBoundary() {
 
   assert.equal(isIntercepted("https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"), false);
   assert.equal(isIntercepted("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.3/dist/umd/supabase.js"), false);
-  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=24"), true);
+  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/vendor/supabase-2.110.3.js"), true);
+  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=28"), true);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/private.json"), false);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/", "navigate"), true);
+}
+
+function testOptimisticCloudSchema() {
+  const schema = fs.readFileSync(path.join(root, "supabase", "schema.sql"), "utf8");
+  const cloud = fs.readFileSync(path.join(root, "cloud.js"), "utf8");
+  assert.match(schema, /add column if not exists version bigint not null default 1/i);
+  assert.match(schema, /create or replace function public\.save_user_state[\s\S]*?security definer[\s\S]*?state_conflict/i);
+  assert.match(schema, /grant select on public\.user_states to authenticated/i);
+  assert.doesNotMatch(schema, /grant select, insert, update, delete on public\.user_states/i);
+  assert.match(schema, /max_active_sketches constant bigint := 250/i);
+  assert.match(schema, /max_active_bytes constant bigint := 67108864/i);
+  assert.match(schema, /set document = pg_catalog\.jsonb_build_object[\s\S]*?'deleted', true/i);
+  assert.match(cloud, /client\.rpc\("save_user_state"/);
+  assert.doesNotMatch(cloud, /\.from\("user_states"\)[\s\S]{0,120}\.upsert\(/);
 }
 
 Promise.resolve()
   .then(testStateSanitizingAndLogoutPurge)
   .then(testServiceWorkerCacheBoundary)
+  .then(testOptimisticCloudSchema)
   .then(() => console.log("Security regression tests passed."))
   .catch((error) => {
     console.error(error);

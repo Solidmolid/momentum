@@ -7,7 +7,32 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "4.4";
+  const APP_VERSION = "5.0";
+  const STATE_VERSION = 7;
+  const LOCAL_PREVIEW = typeof location !== "undefined"
+    && ["localhost", "127.0.0.1"].includes(location.hostname)
+    && new URLSearchParams(location.search).has("preview");
+  const APP_SECTIONS = [
+    { id: "habits", label: "Gewohnheiten", shortLabel: "Habits" },
+    { id: "tasks", label: "Tasks", shortLabel: "Tasks" },
+    { id: "calendar", label: "Kalender", shortLabel: "Kalender" },
+    { id: "health", label: "Gesundheit", shortLabel: "Health" },
+    { id: "focus", label: "Pomodoro", shortLabel: "Fokus" },
+    { id: "sketches", label: "Skizzen", shortLabel: "Skizzen" },
+  ];
+  const SECTION_IDS = new Set(APP_SECTIONS.map((section) => section.id));
+  const DEFAULT_SECTION_LAYOUT = APP_SECTIONS.map((section) => ({ id: section.id, visible: true }));
+  const DEFAULT_POMODORO_SETTINGS = {
+    focusMinutes: 25,
+    shortBreakMinutes: 5,
+    longBreakMinutes: 15,
+    longBreakEvery: 4,
+    autoStartBreaks: false,
+    autoStartFocus: false,
+    sound: true,
+    vibration: true,
+    notifications: false,
+  };
   const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const HEALTH_FIELDS = [
@@ -20,6 +45,14 @@
   const NUTRITION_FIELDS = HEALTH_FIELDS.filter((field) => field.key !== "steps");
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+  const SECTION_ICONS = {
+    habits: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>',
+    tasks: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    calendar: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>',
+    health: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>',
+    focus: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6M12 2v3"/></svg>',
+    sketches: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></svg>',
+  };
 
   /* ---------- Datum-Helfer (lokale Zeit) ---------- */
   const pad = (n) => String(n).padStart(2, "0");
@@ -46,9 +79,15 @@
     const startDate = todayStr();
     const startMonday = dateStr(mondayOf(parseDate(startDate)));
     return {
-      version: 6,
+      version: STATE_VERSION,
       meta: { updatedAt: Date.now() },
-      settings: { startDate, startMonday, theme: "light" },
+      settings: {
+        startDate,
+        startMonday,
+        theme: "light",
+        sections: cloneSectionLayout(),
+        lastScreen: "habits",
+      },
       habits: [
         { id: uid(), emoji: "🌅", name: "Aufstehen um 5 Uhr", type: "daily", target: 1 },
         { id: uid(), emoji: "🏋️", name: "Gym", type: "weekly", target: 3 },
@@ -65,6 +104,28 @@
       archivedTasks: [],
       events: [],
       health: { goals: { calories: 0, protein: 0, carbs: 0, fat: 0, steps: 0 }, entries: {} },
+      pomodoro: seedPomodoro(),
+    };
+  }
+
+  function cloneSectionLayout() {
+    return DEFAULT_SECTION_LAYOUT.map((section) => ({ ...section }));
+  }
+
+  function seedPomodoro() {
+    return {
+      settings: { ...DEFAULT_POMODORO_SETTINGS },
+      timer: {
+        phase: "focus",
+        status: "idle",
+        startedAt: null,
+        endsAt: null,
+        remainingMs: DEFAULT_POMODORO_SETTINGS.focusMinutes * 60_000,
+        plannedMs: DEFAULT_POMODORO_SETTINGS.focusMinutes * 60_000,
+        focusRound: 0,
+        completionToken: null,
+      },
+      sessions: [],
     };
   }
 
@@ -91,6 +152,25 @@
   const cleanNumber = (value, fallback = 0, max = 1_000_000) => {
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? Math.min(number, max) : fallback;
+  };
+  const cleanInteger = (value, fallback, min, max) => {
+    const number = Math.round(Number(value));
+    return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  };
+  const normalizeSectionLayout = (rawSections) => {
+    const seen = new Set();
+    const normalized = [];
+    if (Array.isArray(rawSections)) rawSections.forEach((rawSection) => {
+      const id = String(rawSection?.id || "");
+      if (!SECTION_IDS.has(id) || seen.has(id)) return;
+      seen.add(id);
+      normalized.push({ id, visible: rawSection?.visible !== false });
+    });
+    DEFAULT_SECTION_LAYOUT.forEach((section) => {
+      if (!seen.has(section.id)) normalized.push({ ...section });
+    });
+    if (!normalized.some((section) => section.visible)) normalized[0].visible = true;
+    return normalized;
   };
   const cleanHabitDefinition = (rawHabit) => ({
     emoji: cleanText(rawHabit?.emoji, 8, "•"),
@@ -129,6 +209,8 @@
       startDate,
       startMonday: dateStr(mondayOf(parseDate(startDate))),
       theme: rawSettings.theme === "dark" ? "dark" : "light",
+      sections: normalizeSectionLayout(rawSettings.sections),
+      lastScreen: SECTION_IDS.has(rawSettings.lastScreen) ? rawSettings.lastScreen : "habits",
     };
 
     const habitIds = new Map();
@@ -275,8 +357,59 @@
       if (!entry.foods.length) delete entry.foods;
       return [safeDate, entry];
     }).filter((pair) => pair && Object.keys(pair[1]).length).slice(0, 1500));
+
+    const rawPomodoro = s.pomodoro && typeof s.pomodoro === "object" ? s.pomodoro : {};
+    const rawPomodoroSettings = rawPomodoro.settings && typeof rawPomodoro.settings === "object" ? rawPomodoro.settings : {};
+    const pomodoroSettings = {
+      focusMinutes: cleanInteger(rawPomodoroSettings.focusMinutes, DEFAULT_POMODORO_SETTINGS.focusMinutes, 1, 180),
+      shortBreakMinutes: cleanInteger(rawPomodoroSettings.shortBreakMinutes, DEFAULT_POMODORO_SETTINGS.shortBreakMinutes, 1, 60),
+      longBreakMinutes: cleanInteger(rawPomodoroSettings.longBreakMinutes, DEFAULT_POMODORO_SETTINGS.longBreakMinutes, 1, 120),
+      longBreakEvery: cleanInteger(rawPomodoroSettings.longBreakEvery, DEFAULT_POMODORO_SETTINGS.longBreakEvery, 2, 12),
+      autoStartBreaks: rawPomodoroSettings.autoStartBreaks === true,
+      autoStartFocus: rawPomodoroSettings.autoStartFocus === true,
+      sound: rawPomodoroSettings.sound !== false,
+      vibration: rawPomodoroSettings.vibration !== false,
+      notifications: rawPomodoroSettings.notifications === true,
+    };
+    const rawTimer = rawPomodoro.timer && typeof rawPomodoro.timer === "object" ? rawPomodoro.timer : {};
+    const phase = ["focus", "shortBreak", "longBreak"].includes(rawTimer.phase) ? rawTimer.phase : "focus";
+    const status = ["idle", "running", "paused"].includes(rawTimer.status) ? rawTimer.status : "idle";
+    const phaseMinutes = phase === "focus" ? pomodoroSettings.focusMinutes : phase === "longBreak" ? pomodoroSettings.longBreakMinutes : pomodoroSettings.shortBreakMinutes;
+    const phaseDurationMs = phaseMinutes * 60_000;
+    const remainingMs = cleanNumber(rawTimer.remainingMs, phaseDurationMs, 10_800_000);
+    const plannedMs = cleanNumber(rawTimer.plannedMs ?? rawTimer.plannedDurationMs ?? rawTimer.durationMs, status === "idle" ? phaseDurationMs : (remainingMs || phaseDurationMs), 10_800_000);
+    const sessions = Array.isArray(rawPomodoro.sessions) ? rawPomodoro.sessions.slice(-1000) : [];
+    const usedSessionIds = new Set();
+    s.pomodoro = {
+      settings: pomodoroSettings,
+      timer: {
+        phase,
+        status,
+        startedAt: rawTimer.startedAt ? cleanNumber(rawTimer.startedAt, 0, Number.MAX_SAFE_INTEGER) : null,
+        endsAt: rawTimer.endsAt ? cleanNumber(rawTimer.endsAt, 0, Number.MAX_SAFE_INTEGER) : null,
+        remainingMs,
+        plannedMs: Math.max(remainingMs, plannedMs),
+        focusRound: cleanInteger(rawTimer.focusRound, 0, 0, 100_000),
+        completionToken: rawTimer.completionToken ? cleanText(rawTimer.completionToken, 100) : null,
+      },
+      sessions: sessions.map((rawSession) => {
+        let id = cleanId(rawSession?.id);
+        while (usedSessionIds.has(id)) id = uid();
+        usedSessionIds.add(id);
+        const startedAt = cleanNumber(rawSession?.startedAt, 0, Number.MAX_SAFE_INTEGER);
+        const completedAt = cleanNumber(rawSession?.completedAt ?? rawSession?.endedAt, startedAt, Number.MAX_SAFE_INTEGER);
+        return {
+          id,
+          phase: ["focus", "shortBreak", "longBreak"].includes(rawSession?.phase) ? rawSession.phase : "focus",
+          startedAt,
+          completedAt: Math.max(startedAt, completedAt),
+          durationMs: cleanInteger(rawSession?.durationMs ?? Number(rawSession?.durationSeconds) * 1000, 0, 0, 86_400_000),
+        };
+      }).filter((session) => session.startedAt && session.completedAt >= session.startedAt && session.durationMs > 0),
+    };
+    if (window.MomentumPomodoro?.normalize) s.pomodoro = window.MomentumPomodoro.normalize(s.pomodoro);
     return {
-      version: 6,
+      version: STATE_VERSION,
       meta: s.meta,
       settings: s.settings,
       habits: s.habits,
@@ -286,6 +419,7 @@
       archivedTasks: s.archivedTasks,
       events: s.events,
       health: s.health,
+      pomodoro: s.pomodoro,
     };
   }
   const stateRevision = (value) => Number(value?.meta?.updatedAt) || 0;
@@ -321,6 +455,11 @@
       const foods = mergeById(baseEntry.foods, entry.foods);
       if (foods.length) merged.health.entries[date].foods = foods;
     });
+    merged.pomodoro.settings = { ...base.pomodoro.settings, ...preferred.pomodoro.settings };
+    merged.pomodoro.timer = { ...preferred.pomodoro.timer };
+    merged.pomodoro.sessions = mergeById(base.pomodoro.sessions, preferred.pomodoro.sessions)
+      .sort((a, b) => a.completedAt - b.completedAt)
+      .slice(-1000);
     merged.meta = { updatedAt: Math.max(Date.now(), stateRevision(base), stateRevision(preferred)) + 1, mergedLegacy: true };
     return normalizeState(merged);
   }
@@ -340,11 +479,14 @@
       return raw ? JSON.parse(raw) : null;
     } catch (_error) { return null; }
   }
+  function persistLocalState() {
+    localStorage.setItem(cloudUser ? userStorageKey(cloudUser.id) : KEY, JSON.stringify(state));
+  }
   function save() {
     try {
       state.meta = state.meta || {};
       state.meta.updatedAt = Math.max(Date.now(), stateRevision(state) + 1);
-      localStorage.setItem(cloudUser ? userStorageKey(cloudUser.id) : KEY, JSON.stringify(state));
+      persistLocalState();
       scheduleCloudSave();
     }
     catch (e) { console.error("Speichern fehlgeschlagen", e); }
@@ -362,7 +504,7 @@
     if (!("caches" in window)) return;
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.filter((name) => name.startsWith("momentum-")).map(async (name) => {
-      if (name !== "momentum-v24") return caches.delete(name);
+      if (name !== "momentum-v28") return caches.delete(name);
       const cache = await caches.open(name);
       const requests = await cache.keys();
       return Promise.all(requests
@@ -389,7 +531,22 @@
   let cloudSaveInFlight = null;
   let cloudSaveRequested = false;
   let cloudSyncLabel = "Noch nicht synchronisiert";
+  let cloudStateVersion = 0;
+  let lastCloudSyncedRevision = 0;
   let activatingUserId = null;
+  let pomodoroTicker = null;
+  let sketchStore = null;
+  let sketchUserId = null;
+  let sketchDocuments = [];
+  let sketchSortMode = "updated";
+  let sketchEditor = null;
+  let activeSketch = null;
+  let sketchSyncGeneration = 0;
+  let sketchSyncFlight = null;
+  let sketchEditorReturnFocus = null;
+  let sketchEditorReturnSketchId = null;
+  let sketchEditorInertState = [];
+  const sketchThumbnailUrls = new Map();
 
   /* ---------- Berechnungen ---------- */
   const dailyHabits = () => state.habits.filter((h) => h.type === "daily");
@@ -476,14 +633,16 @@
     const selected = parseDate(selectedDate || todayStr());
     const reference = selected > today ? today : selected;
     if (trendRange === "start") {
-      const count = Math.max(1, Math.floor((today - start) / 864e5) + 1);
-      const dates = Array.from({ length: count }, (_, i) => addDays(start, i));
+      const rawCount = Math.max(1, Math.floor((today - start) / 864e5) + 1);
+      const count = Math.min(rawCount, 3660);
+      const chartStart = rawCount > count ? addDays(today, -(count - 1)) : start;
+      const dates = Array.from({ length: count }, (_, i) => addDays(chartStart, i));
       const labelPoints = new Set([0, Math.round((count - 1) * .25), Math.round((count - 1) * .5), Math.round((count - 1) * .75), count - 1]);
       return {
         dates,
         values: dates.map((d) => combinedDayPercent(dateStr(d)) || 0),
         labels: dates.map((d, i) => labelPoints.has(i) ? `${d.getDate()}.${d.getMonth() + 1}.` : ""),
-        caption: `seit deinem Start am ${fmtDM(start)}`,
+        caption: rawCount > count ? `letzte 10 Jahre · Start am ${fmtDM(start)}` : `seit deinem Start am ${fmtDM(start)}`,
       };
     }
     if (trendRange === "week") {
@@ -820,13 +979,15 @@
     });
     if (healthRange === "start") {
       const start = parseDate(state.settings.startDate);
-      const count = Math.max(1, Math.floor((today - start) / 864e5) + 1);
-      const dates = Array.from({ length: count }, (_, index) => addDays(start, index));
+      const rawCount = Math.max(1, Math.floor((today - start) / 864e5) + 1);
+      const count = Math.min(rawCount, 3660);
+      const chartStart = rawCount > count ? addDays(today, -(count - 1)) : start;
+      const dates = Array.from({ length: count }, (_, index) => addDays(chartStart, index));
       const labelPoints = new Set([0, Math.round((count - 1) * .25), Math.round((count - 1) * .5), Math.round((count - 1) * .75), count - 1]);
       return {
         ...dateSeries(dates),
         labels: dates.map((date, index) => labelPoints.has(index) ? `${date.getDate()}.${date.getMonth() + 1}.` : ""),
-        caption: `seit ${fmtDM(start)}`,
+        caption: rawCount > count ? `letzte 10 Jahre · Start ${fmtDM(start)}` : `seit ${fmtDM(start)}`,
       };
     }
     if (healthRange === "week") {
@@ -1017,27 +1178,690 @@
     };
   }
 
+  /* ---------- Pomodoro / Fokus ---------- */
+  const focusPhaseLabel = (phase) => phase === "focus" ? "Fokus" : phase === "longBreak" ? "Lange Pause" : "Kurze Pause";
+  const formatCountdown = (milliseconds) => {
+    const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+    return `${pad(Math.floor(totalSeconds / 60))}:${pad(totalSeconds % 60)}`;
+  };
+
+  function pomodoroApi() {
+    return window.MomentumPomodoro || null;
+  }
+
+  function handlePomodoroEffects(effects) {
+    (effects || []).forEach((effect) => {
+      if (effect.type === "sound") playPomodoroSound();
+      else if (effect.type === "vibration" && navigator.vibrate) navigator.vibrate([180, 80, 180]);
+      else if (effect.type === "notification" && "Notification" in window && Notification.permission === "granted") {
+        try {
+          new Notification(`${focusPhaseLabel(effect.phase)} beendet`, {
+            body: `${focusPhaseLabel(effect.nextPhase)} ist als Nächstes bereit.`,
+            icon: "icons/icon-192.png",
+          });
+        } catch (_error) { /* iOS kann Notifications nur über den Service Worker erlauben. */ }
+      }
+    });
+  }
+
+  function playPomodoroSound() {
+    try {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const context = new AudioContextCtor();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(740, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(980, context.currentTime + .18);
+      gain.gain.setValueAtTime(.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(.18, context.currentTime + .02);
+      gain.gain.exponentialRampToValueAtTime(.0001, context.currentTime + .38);
+      oscillator.connect(gain); gain.connect(context.destination);
+      oscillator.start(); oscillator.stop(context.currentTime + .4);
+      oscillator.onended = () => context.close().catch(() => {});
+    } catch (_error) { /* Sound ist optional. */ }
+  }
+
+  function dispatchPomodoro(type, payload = {}, allowAutoStart = false) {
+    const api = pomodoroApi();
+    if (!api) return false;
+    const result = api.dispatch(state.pomodoro, { type, ...payload, allowAutoStart }, Date.now());
+    if (!result.changed) return false;
+    state.pomodoro = result.state;
+    save();
+    handlePomodoroEffects(result.effects);
+    renderFocus();
+    return true;
+  }
+
+  function reconcilePomodoro(allowAutoStart = false) {
+    const api = pomodoroApi();
+    if (!api) return false;
+    const result = api.dispatch(state.pomodoro, { type: "RECONCILE", allowAutoStart }, Date.now());
+    if (!result.changed) return false;
+    state.pomodoro = result.state;
+    save();
+    handlePomodoroEffects(result.effects);
+    return true;
+  }
+
+  function renderFocus() {
+    const api = pomodoroApi();
+    if (!api || !state?.pomodoro) return;
+    reconcilePomodoro(document.visibilityState === "visible");
+    const pomodoro = api.normalize(state.pomodoro);
+    state.pomodoro = pomodoro;
+    const timer = pomodoro.timer;
+    const remaining = api.remainingMs(pomodoro, Date.now());
+    const duration = Number(timer.plannedMs) || api.durationMs(pomodoro.settings, timer.phase);
+    const progress = duration ? Math.max(0, Math.min(1, 1 - remaining / duration)) : 0;
+    $("#focus-phase-title").textContent = focusPhaseLabel(timer.phase);
+    $("#focus-time").textContent = formatCountdown(remaining);
+    $("#focus-timer-ring").style.setProperty("--progress", `${progress * 360}deg`);
+    $("#focus-round").textContent = timer.phase === "focus"
+      ? `Runde ${Math.min(timer.focusRound + 1, pomodoro.settings.longBreakEvery)} von ${pomodoro.settings.longBreakEvery}`
+      : timer.phase === "longBreak" ? "Zyklus geschafft" : `Nach Runde ${timer.focusRound}`;
+    $("#focus-status-copy").textContent = timer.status === "running"
+      ? `${focusPhaseLabel(timer.phase)} läuft – du kannst den Bereich jederzeit wechseln.`
+      : timer.status === "paused"
+        ? "Pausiert. Deine Restzeit bleibt gespeichert."
+        : timer.phase === "focus" ? "Bereit für eine konzentrierte Einheit." : "Die Pause ist bereit.";
+    $("#focus-toggle").textContent = timer.status === "running" ? "Pause" : timer.status === "paused" ? "Fortsetzen" : "Start";
+
+    const stats = api.stats(pomodoro, Date.now());
+    $("#focus-today-minutes").textContent = `${stats.today.focusMinutes} Min.`;
+    $("#focus-today-sessions").textContent = `${stats.today.sessions} ${stats.today.sessions === 1 ? "Einheit" : "Einheiten"}`;
+    $("#focus-week-minutes").textContent = `${stats.last7Days.focusMinutes} Min.`;
+    $("#focus-week-sessions").textContent = `${stats.last7Days.sessions} ${stats.last7Days.sessions === 1 ? "Einheit" : "Einheiten"}`;
+    const maxMinutes = Math.max(1, ...stats.last7Days.days.map((day) => day.focusMinutes));
+    $("#focus-week-chart").innerHTML = stats.last7Days.days.map((day) => {
+      const date = parseDate(day.date);
+      const height = day.focusMinutes ? Math.max(5, day.focusMinutes / maxMinutes * 100) : 3;
+      const weekday = WD[(date.getDay() + 6) % 7];
+      return `<div class="focus-bar" role="img" aria-label="${weekday}, ${formatLongDate(day.date)}: ${day.focusMinutes} Fokusminuten"><span class="focus-bar__value">${day.focusMinutes || ""}</span><span class="focus-bar__track"><i class="focus-bar__fill" style="height:${height}%"></i></span><span class="focus-bar__label">${weekday}</span></div>`;
+    }).join("");
+    const sessions = pomodoro.sessions.filter((session) => session.phase === "focus").slice(-8).reverse();
+    $("#focus-history").innerHTML = sessions.length ? sessions.map((session) => {
+      const completed = new Date(session.completedAt);
+      return `<div class="focus-history-row"><span><strong>${formatLongDate(dateStr(completed))}</strong><span>${completed.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</span></span><b>${Math.round(session.durationMs / 60_000)} Min.</b></div>`;
+    }).join("") : '<p class="focus-empty">Deine abgeschlossenen Fokuszeiten erscheinen hier.</p>';
+  }
+
+  function openPomodoroSettings() {
+    const settings = pomodoroApi()?.normalize(state.pomodoro).settings || state.pomodoro.settings;
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">Fokus</span><div class="sheet__title">Pomodoro einstellen</div></div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <div class="focus-settings-grid">
+        <label class="field"><span>Fokus (Minuten)</span><input class="input" id="focus-setting-focus" type="number" min="1" max="180" value="${settings.focusMinutes}"></label>
+        <label class="field"><span>Kurze Pause</span><input class="input" id="focus-setting-short" type="number" min="1" max="60" value="${settings.shortBreakMinutes}"></label>
+        <label class="field"><span>Lange Pause</span><input class="input" id="focus-setting-long" type="number" min="1" max="120" value="${settings.longBreakMinutes}"></label>
+        <label class="field"><span>Lange Pause nach</span><input class="input" id="focus-setting-rounds" type="number" min="2" max="12" value="${settings.longBreakEvery}"></label>
+      </div>
+      <div class="focus-options">
+        <label class="focus-option"><span>Pausen automatisch starten</span><input id="focus-setting-auto-break" type="checkbox" ${settings.autoStartBreaks ? "checked" : ""}></label>
+        <label class="focus-option"><span>Fokus nach Pause automatisch starten</span><input id="focus-setting-auto-focus" type="checkbox" ${settings.autoStartFocus ? "checked" : ""}></label>
+        <label class="focus-option"><span>Ton</span><input id="focus-setting-sound" type="checkbox" ${settings.sound ? "checked" : ""}></label>
+        <label class="focus-option"><span>Vibration</span><input id="focus-setting-vibration" type="checkbox" ${settings.vibration ? "checked" : ""}></label>
+        <label class="focus-option"><span>Benachrichtigung</span><input id="focus-setting-notification" type="checkbox" ${settings.notifications ? "checked" : ""}></label>
+      </div>
+      <p class="field-hint">Eine vollständig beendete iPhone-Web-App kann keinen garantierten Hintergrundalarm auslösen. Beim erneuten Öffnen stimmt der Timerstand trotzdem.</p>
+      <button class="btn" id="focus-settings-save">Speichern</button>`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#focus-settings-save").onclick = async () => {
+      const notifications = sheet.querySelector("#focus-setting-notification").checked;
+      let notificationsAllowed = notifications;
+      if (notifications && "Notification" in window && Notification.permission === "default") {
+        try { notificationsAllowed = (await Notification.requestPermission()) === "granted"; }
+        catch (_error) { notificationsAllowed = false; }
+      }
+      dispatchPomodoro("CONFIG_UPDATE", { settings: {
+        focusMinutes: Number(sheet.querySelector("#focus-setting-focus").value),
+        shortBreakMinutes: Number(sheet.querySelector("#focus-setting-short").value),
+        longBreakMinutes: Number(sheet.querySelector("#focus-setting-long").value),
+        longBreakEvery: Number(sheet.querySelector("#focus-setting-rounds").value),
+        autoStartBreaks: sheet.querySelector("#focus-setting-auto-break").checked,
+        autoStartFocus: sheet.querySelector("#focus-setting-auto-focus").checked,
+        sound: sheet.querySelector("#focus-setting-sound").checked,
+        vibration: sheet.querySelector("#focus-setting-vibration").checked,
+        notifications: notificationsAllowed,
+      } });
+      closeSheet(); renderFocus(); toast("Pomodoro-Einstellungen gespeichert");
+    };
+  }
+
+  /* ---------- Skizzenbibliothek / Vektoreditor ---------- */
+  const sketchApi = () => window.MomentumSketch || null;
+
+  function setSketchSyncStatus(message, isError = false) {
+    const element = $("#sketch-sync-status");
+    if (!element) return;
+    element.textContent = message;
+    element.classList.toggle("is-error", isError);
+  }
+
+  async function initSketches(userId) {
+    const api = sketchApi();
+    if (!api || !userId) return;
+    if (sketchUserId !== userId) {
+      // Alle asynchronen Arbeiten des alten Kontos sofort ungültig machen.
+      sketchSyncGeneration += 1;
+      clearTimeout(sketchSyncTimer);
+      const previousEditor = sketchEditor;
+      if (previousEditor) await previousEditor.destroy().catch(() => {});
+      sketchEditor = null;
+      activeSketch = null;
+      sketchUserId = userId;
+      sketchStore = api.createStore();
+      sketchDocuments = [];
+      sketchThumbnailUrls.forEach((entry) => URL.revokeObjectURL(entry.url));
+      sketchThumbnailUrls.clear();
+    }
+    try {
+      const generation = sketchSyncGeneration;
+      const store = sketchStore;
+      sketchDocuments = await store.list(userId);
+      if (generation !== sketchSyncGeneration || store !== sketchStore || userId !== sketchUserId) return;
+      renderSketches();
+      await syncSketchDocuments();
+    } catch (error) {
+      console.warn("Skizzen konnten nicht geladen werden", error);
+      setSketchSyncStatus("Lokaler Skizzenspeicher ist nicht verfügbar", true);
+    }
+  }
+
+  function sketchIsDirty(documentValue) {
+    return !documentValue.lastSyncedUpdatedAt || documentValue.updatedAt > documentValue.lastSyncedUpdatedAt;
+  }
+
+  function sketchContextIsCurrent(context, requireCloud = true) {
+    return context
+      && context.generation === sketchSyncGeneration
+      && context.userId === sketchUserId
+      && context.store === sketchStore
+      && (!requireCloud || cloudUser?.id === context.userId);
+  }
+
+  function sketchPayload(documentValue) {
+    if (!documentValue) return null;
+    const { cloudVersion, lastSyncedUpdatedAt, deletedAt, ...payload } = documentValue;
+    void cloudVersion; void lastSyncedUpdatedAt; void deletedAt;
+    return payload;
+  }
+
+  function sameSketchPayload(left, right) {
+    try { return JSON.stringify(sketchPayload(left)) === JSON.stringify(sketchPayload(right)); }
+    catch (_error) { return false; }
+  }
+
+  function acknowledgeOpenSketch(id, cloudVersion, syncedUpdatedAt, replacement = null) {
+    if (activeSketch?.id !== id) return;
+    if (replacement && !sketchEditor?.isDirty?.()) {
+      activeSketch = replacement;
+      sketchEditor?.setDocument(replacement);
+      $("#sketch-editor-title").textContent = replacement.title;
+      return;
+    }
+    activeSketch = sketchApi().normalizeDocument({
+      ...activeSketch,
+      cloudVersion,
+      lastSyncedUpdatedAt: Math.max(Number(activeSketch.lastSyncedUpdatedAt) || 0, Number(syncedUpdatedAt) || 0),
+    });
+    sketchEditor?.acknowledgeSync?.(id, cloudVersion, syncedUpdatedAt);
+  }
+
+  async function syncSketchOnce(context) {
+    const api = sketchApi();
+    if (!api || !sketchContextIsCurrent(context) || !window.MomentumCloud?.listSketches || !navigator.onLine) return { ok: false, skipped: true };
+    setSketchSyncStatus("Skizzen werden synchronisiert …");
+    try {
+      const localDocuments = await context.store.list(context.userId);
+      if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+      const localById = new Map(localDocuments.map((documentValue) => [documentValue.id, documentValue]));
+      const cloudRows = await window.MomentumCloud.listSketches(context.userId);
+      if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+      const cloudById = new Map(cloudRows.map((row) => [row.id, row]));
+
+      for (const row of cloudRows) {
+        if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+        const local = localById.get(row.id);
+        if (row.deleted_at) {
+          if (local && sketchIsDirty(local) && !local.deletedAt) {
+            const conflict = api.normalizeDocument({
+              ...local,
+              id: api.createId(),
+              title: `${local.title} – Konfliktkopie`,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              cloudVersion: 0,
+              lastSyncedUpdatedAt: 0,
+              deletedAt: null,
+            });
+            await context.store.put(context.userId, conflict);
+            if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          }
+          if (local) await context.store.delete(context.userId, row.id);
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          continue;
+        }
+
+        const remote = api.normalizeDocument({
+          ...row.document,
+          id: row.id,
+          cloudVersion: row.version,
+          lastSyncedUpdatedAt: Number(row.document?.updatedAt) || Date.parse(row.updated_at) || Date.now(),
+          deletedAt: null,
+        });
+        if (!local) {
+          await context.store.put(context.userId, remote);
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          continue;
+        }
+        const localDirty = sketchIsDirty(local);
+        if (!localDirty) {
+          if (row.version > local.cloudVersion || remote.updatedAt > local.updatedAt) {
+            await context.store.put(context.userId, remote);
+            if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+            acknowledgeOpenSketch(row.id, remote.cloudVersion, remote.lastSyncedUpdatedAt, remote);
+          }
+          continue;
+        }
+        if (local.cloudVersion === row.version) continue;
+        if (sameSketchPayload(local, remote)) {
+          await context.store.put(context.userId, remote);
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          acknowledgeOpenSketch(row.id, remote.cloudVersion, remote.lastSyncedUpdatedAt, remote);
+          continue;
+        }
+
+        const conflict = api.normalizeDocument({
+          ...local,
+          id: api.createId(),
+          title: `${local.title} – Konfliktkopie`,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cloudVersion: 0,
+          lastSyncedUpdatedAt: 0,
+          deletedAt: null,
+        });
+        await context.store.put(context.userId, conflict);
+        if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+        await context.store.put(context.userId, remote);
+        if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+        acknowledgeOpenSketch(row.id, remote.cloudVersion, remote.lastSyncedUpdatedAt, remote);
+        toast("Eine parallel bearbeitete Skizze wurde als Konfliktkopie erhalten");
+      }
+
+      const refreshedLocal = await context.store.list(context.userId);
+      if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+      for (const local of refreshedLocal) {
+        if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+        const cloud = cloudById.get(local.id);
+        if (local.deletedAt) {
+          if (!cloud) await context.store.delete(context.userId, local.id);
+          else {
+            await window.MomentumCloud.deleteSketch(local.id, local.cloudVersion || cloud.version);
+            if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+            const current = await context.store.get(context.userId, local.id);
+            if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+            if (current?.deletedAt && current.updatedAt === local.updatedAt) await context.store.delete(context.userId, local.id);
+          }
+          continue;
+        }
+        if (!cloud || (sketchIsDirty(local) && local.cloudVersion === cloud.version)) {
+          const saved = await window.MomentumCloud.saveSketch(local, cloud?.version || 0);
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          const acknowledgedAt = Number(saved.document?.updatedAt) || local.updatedAt;
+          const synced = api.normalizeDocument({
+            ...saved.document,
+            id: saved.id,
+            cloudVersion: saved.version,
+            lastSyncedUpdatedAt: acknowledgedAt,
+            deletedAt: null,
+          });
+          const current = await context.store.get(context.userId, local.id);
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+          if (!current) continue;
+          if (current.updatedAt === local.updatedAt && !current.deletedAt) {
+            await context.store.put(context.userId, synced);
+            acknowledgeOpenSketch(local.id, saved.version, acknowledgedAt, synced);
+          } else {
+            const currentWithAck = api.normalizeDocument({
+              ...current,
+              cloudVersion: saved.version,
+              lastSyncedUpdatedAt: Math.max(Number(current.lastSyncedUpdatedAt) || 0, acknowledgedAt),
+            });
+            await context.store.put(context.userId, currentWithAck);
+            acknowledgeOpenSketch(local.id, saved.version, acknowledgedAt);
+          }
+          if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+        }
+      }
+
+      sketchDocuments = (await context.store.list(context.userId)).filter((documentValue) => !documentValue.deletedAt);
+      if (!sketchContextIsCurrent(context)) return { ok: false, cancelled: true };
+      setSketchSyncStatus(`Synchronisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+      renderSketches();
+      return { ok: true, pending: sketchDocuments.filter(sketchIsDirty).length };
+    } catch (error) {
+      console.warn("Skizzen-Synchronisierung pausiert", error);
+      if (sketchContextIsCurrent(context, false)) {
+        sketchDocuments = (await context.store.list(context.userId).catch(() => sketchDocuments)).filter((documentValue) => !documentValue.deletedAt);
+        setSketchSyncStatus(navigator.onLine ? "Synchronisierung fehlgeschlagen – lokale Änderungen bleiben erhalten" : "Offline – Skizzen werden später synchronisiert", true);
+        renderSketches();
+        if (navigator.onLine) scheduleSketchSync(5000);
+      }
+      return { ok: false, error };
+    }
+  }
+
+  async function syncSketchDocuments() {
+    const context = { generation: sketchSyncGeneration, userId: sketchUserId, store: sketchStore };
+    if (!sketchApi() || !context.store || !context.userId || !cloudUser || !window.MomentumCloud?.listSketches || !navigator.onLine) {
+      setSketchSyncStatus(navigator.onLine ? "Lokal auf diesem Gerät gespeichert" : "Offline – Skizzen werden später synchronisiert");
+      return { ok: !cloudUser, skipped: true };
+    }
+    if (sketchSyncFlight?.generation === context.generation) {
+      sketchSyncFlight.requested = true;
+      return sketchSyncFlight.promise;
+    }
+    const flight = { generation: context.generation, requested: false, promise: null };
+    flight.promise = (async () => {
+      let result;
+      do {
+        flight.requested = false;
+        result = await syncSketchOnce(context);
+      } while (flight.requested && sketchContextIsCurrent(context) && result?.ok);
+      return result;
+    })().finally(() => { if (sketchSyncFlight === flight) sketchSyncFlight = null; });
+    sketchSyncFlight = flight;
+    return flight.promise;
+  }
+
+  let sketchSyncTimer = null;
+  function scheduleSketchSync(delay = 900) {
+    clearTimeout(sketchSyncTimer);
+    sketchSyncTimer = setTimeout(syncSketchDocuments, delay);
+  }
+
+  async function saveSketchDocument(documentValue, { renderLibrary = true } = {}) {
+    if (!sketchStore || !sketchUserId) throw new Error("Skizzenspeicher ist noch nicht bereit.");
+    const context = { generation: sketchSyncGeneration, userId: sketchUserId, store: sketchStore };
+    const saved = await context.store.put(context.userId, documentValue);
+    if (!sketchContextIsCurrent(context, false)) return saved;
+    const index = sketchDocuments.findIndex((entry) => entry.id === saved.id);
+    if (index >= 0) sketchDocuments[index] = saved;
+    else sketchDocuments.push(saved);
+    activeSketch = activeSketch?.id === saved.id ? saved : activeSketch;
+    if (renderLibrary) renderSketches();
+    scheduleSketchSync();
+    return saved;
+  }
+
+  function sortedSketchDocuments() {
+    const items = sketchDocuments.filter((documentValue) => !documentValue.deletedAt).slice();
+    if (sketchSortMode === "name") return items.sort((a, b) => a.title.localeCompare(b.title, "de", { sensitivity: "base" }));
+    if (sketchSortMode === "date") return items.sort((a, b) => b.documentDate.localeCompare(a.documentDate) || b.updatedAt - a.updatedAt);
+    return items.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  function renderSketches() {
+    const grid = $("#sketch-grid");
+    if (!grid) return;
+    const documents = sortedSketchDocuments();
+    $("#sketch-count").textContent = `${documents.length} ${documents.length === 1 ? "Skizze" : "Skizzen"}`;
+    $("#sketch-sort").value = sketchSortMode;
+    grid.innerHTML = documents.length ? documents.map((documentValue) => `<article class="sketch-card" data-sketch-id="${documentValue.id}">
+      <button class="sketch-card__open" data-open-sketch="${documentValue.id}" aria-label="${escapeHtml(documentValue.title)} öffnen. Skizzendatum ${escapeHtml(formatLongDate(documentValue.documentDate))}">
+        <span class="sketch-card__preview" data-sketch-preview="${documentValue.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></svg></span>
+        <span class="sketch-card__body"><strong>${escapeHtml(documentValue.title)}</strong><p>${escapeHtml(documentValue.description || "Ohne Beschreibung")}</p><span class="sketch-card__meta"><span>Datum: ${formatLongDate(documentValue.documentDate)}</span><span>Erstellt: ${new Date(documentValue.createdAt).toLocaleDateString("de-DE")}</span><span>Bearbeitet: ${new Date(documentValue.updatedAt).toLocaleDateString("de-DE")}</span></span></span>
+      </button>
+      <button class="sketch-card__more" data-sketch-menu="${documentValue.id}" aria-label="${escapeHtml(documentValue.title)} bearbeiten">•••</button>
+    </article>`).join("") : '<div class="sketch-empty"><strong>Noch keine Skizze</strong><span>Erstelle deine erste Skizze und bearbeite sie später auf iPad, Handy oder Laptop weiter.</span></div>';
+    refreshSketchThumbnails(documents);
+  }
+
+  async function refreshSketchThumbnails(documents) {
+    const api = sketchApi();
+    if (!api) return;
+    const previewFor = (id) => [...document.querySelectorAll("[data-sketch-preview]")].find((element) => element.dataset.sketchPreview === id);
+    for (const documentValue of documents) {
+      const placeholder = previewFor(documentValue.id);
+      if (!placeholder) continue;
+      const key = `${documentValue.id}:${documentValue.updatedAt}`;
+      const cached = sketchThumbnailUrls.get(documentValue.id);
+      if (cached?.key === key) {
+        placeholder.innerHTML = `<img src="${cached.url}" alt="">`;
+        continue;
+      }
+      try {
+        const blob = await api.documentToBlob(documentValue, { maxWidth: 420, mimeType: "image/webp", quality: .75 });
+        if (!previewFor(documentValue.id)) continue;
+        if (cached) URL.revokeObjectURL(cached.url);
+        const url = URL.createObjectURL(blob);
+        sketchThumbnailUrls.set(documentValue.id, { key, url });
+        const current = previewFor(documentValue.id);
+        if (current) current.innerHTML = `<img src="${url}" alt="">`;
+      } catch (_error) { /* Leere Vorschau bleibt sichtbar. */ }
+    }
+  }
+
+  function openSketchDetails(documentValue, openAfterSave = false) {
+    const isNew = !documentValue;
+    const base = documentValue || sketchApi().createDocument();
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">Skizzen</span><div class="sheet__title">${isNew ? "Neue Skizze" : "Details bearbeiten"}</div></div><button class="sheet__close" data-close>Abbrechen</button></div>
+      <label class="field"><span>Titel</span><input class="input" id="sketch-detail-title" maxlength="80" value="${escapeHtml(base.title)}" placeholder="z. B. Projektidee" autocomplete="off"></label>
+      <label class="field"><span>Beschreibung (optional)</span><textarea class="input" id="sketch-detail-description" maxlength="500" rows="3" placeholder="Worum geht es?">${escapeHtml(base.description)}</textarea></label>
+      <label class="field"><span>Datum</span><input class="input" id="sketch-detail-date" type="date" value="${base.documentDate}"></label>
+      <button class="btn" id="sketch-detail-save">${isNew ? "Skizze erstellen" : "Speichern"}</button>`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#sketch-detail-save").onclick = async () => {
+      const saveButton = sheet.querySelector("#sketch-detail-save");
+      saveButton.disabled = true;
+      try {
+        const next = sketchApi().normalizeDocument({
+          ...base,
+          title: sheet.querySelector("#sketch-detail-title").value,
+          description: sheet.querySelector("#sketch-detail-description").value,
+          documentDate: sheet.querySelector("#sketch-detail-date").value,
+          updatedAt: Math.max(Date.now(), (Number(base.updatedAt) || 0) + 1),
+        });
+        const saved = await saveSketchDocument(next);
+        if (sketchEditor && activeSketch?.id === saved.id) {
+          activeSketch = saved;
+          sketchEditor.setDocument(saved);
+          $("#sketch-editor-title").textContent = saved.title;
+        }
+        closeSheet();
+        if (openAfterSave || isNew) await openSketchEditor(saved);
+        else toast("Skizzendetails gespeichert");
+      } catch (error) {
+        console.warn("Skizze konnte nicht gespeichert werden", error);
+        toast("Skizze konnte nicht gespeichert werden");
+        if (saveButton.isConnected) saveButton.disabled = false;
+      }
+    };
+  }
+
+  async function openSketchEditor(documentValue) {
+    const api = sketchApi();
+    if (!api || !sketchStore || !sketchUserId) return;
+    const latest = await sketchStore.get(sketchUserId, documentValue.id) || documentValue;
+    activeSketch = latest;
+    if (sketchEditor) await sketchEditor.destroy();
+    const root = $("#sketch-editor");
+    sketchEditorReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sketchEditorReturnSketchId = latest.id;
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    root.tabIndex = -1;
+    sketchEditorInertState = [...$("#app").children]
+      .filter((element) => element !== root)
+      .map((element) => ({ element, inert: element.inert }));
+    sketchEditorInertState.forEach(({ element }) => { element.inert = true; });
+    root.hidden = false;
+    document.body.classList.add("sketch-editor-open");
+    $("#sketch-editor-title").textContent = latest.title;
+    sketchEditor = api.createEditor({
+      root,
+      document: latest,
+      statusElement: "#sketch-save-status",
+      closeButton: "#sketch-editor-close",
+      textApply: "#sketch-text-apply",
+      textCancel: "#sketch-text-cancel",
+      deleteButton: "#sketch-delete-selection",
+      toast,
+      onSave: async (next) => {
+        const saved = await saveSketchDocument(next, { renderLibrary: false });
+        activeSketch = saved;
+        $("#sketch-editor-title").textContent = saved.title;
+      },
+      onClose: (latestDocument) => closeSketchEditor(latestDocument),
+    });
+    requestAnimationFrame(() => $("#sketch-editor-close")?.focus());
+  }
+
+  function closeSketchEditor(latestDocument = null, { save = true } = {}) {
+    if (latestDocument) {
+      const index = sketchDocuments.findIndex((entry) => entry.id === latestDocument.id);
+      if (index >= 0) sketchDocuments[index] = latestDocument;
+    }
+    sketchEditor?.destroy({ save });
+    sketchEditor = null;
+    activeSketch = null;
+    $("#sketch-editor").hidden = true;
+    document.body.classList.remove("sketch-editor-open");
+    sketchEditorInertState.forEach(({ element, inert }) => { element.inert = inert; });
+    sketchEditorInertState = [];
+    renderSketches();
+    scheduleSketchSync();
+    const target = sketchEditorReturnFocus;
+    const returnSketchId = sketchEditorReturnSketchId;
+    sketchEditorReturnFocus = null;
+    sketchEditorReturnSketchId = null;
+    if (target?.isConnected) target.focus();
+    else if (returnSketchId) [...document.querySelectorAll("[data-open-sketch]")].find((element) => element.dataset.openSketch === returnSketchId)?.focus();
+  }
+
+  async function duplicateSketch(documentValue) {
+    const timestamp = Date.now();
+    const duplicate = sketchApi().normalizeDocument({
+      ...documentValue,
+      id: sketchApi().createId(),
+      title: `${documentValue.title} – Kopie`,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      cloudVersion: 0,
+      lastSyncedUpdatedAt: 0,
+      deletedAt: null,
+    });
+    await saveSketchDocument(duplicate);
+    toast("Skizze dupliziert");
+  }
+
+  async function deleteSketchDocument(documentValue) {
+    if (!confirm(`„${documentValue.title}“ wirklich löschen?`)) return;
+    if (sketchEditor && activeSketch?.id === documentValue.id) {
+      try { await sketchEditor.save("before-delete"); } catch (_error) { return; }
+      closeSketchEditor();
+    }
+    await sketchStore.markDeleted(sketchUserId, documentValue.id);
+    sketchDocuments = sketchDocuments.filter((entry) => entry.id !== documentValue.id);
+    renderSketches();
+    scheduleSketchSync();
+    toast("Skizze gelöscht");
+  }
+
+  async function exportSketchPng(documentValue) {
+    try {
+      const blob = await sketchApi().documentToBlob(documentValue, { mimeType: "image/png" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${documentValue.title.replace(/[^A-Za-z0-9ÄÖÜäöüß _-]/g, "").trim() || "Skizze"}.png`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (_error) { toast("PNG konnte nicht exportiert werden"); }
+  }
+
+  function openSketchMenu(documentValue) {
+    const sheet = openSheet(`
+      <div class="sheet__head"><div><span class="sheet__eyebrow">${formatLongDate(documentValue.documentDate)}</span><div class="sheet__title">${escapeHtml(documentValue.title)}</div></div><button class="sheet__close" data-close>Fertig</button></div>
+      <button class="btn btn--ghost" id="sketch-menu-details">Titel, Beschreibung und Datum</button>
+      <button class="btn btn--ghost" id="sketch-menu-duplicate">Duplizieren</button>
+      <button class="btn btn--ghost" id="sketch-menu-export">Als PNG exportieren</button>
+      <button class="btn btn--danger" id="sketch-menu-delete">Skizze löschen</button>`);
+    sheet.querySelector("[data-close]").onclick = closeSheet;
+    sheet.querySelector("#sketch-menu-details").onclick = () => openSketchDetails(documentValue);
+    sheet.querySelector("#sketch-menu-duplicate").onclick = async () => {
+      try { await duplicateSketch(documentValue); closeSheet(); }
+      catch (error) { console.warn("Skizze konnte nicht dupliziert werden", error); toast("Skizze konnte nicht dupliziert werden"); }
+    };
+    sheet.querySelector("#sketch-menu-export").onclick = () => exportSketchPng(documentValue);
+    sheet.querySelector("#sketch-menu-delete").onclick = async () => {
+      closeSheet();
+      try { await deleteSketchDocument(documentValue); }
+      catch (error) { console.warn("Skizze konnte nicht gelöscht werden", error); toast("Skizze konnte nicht gelöscht werden"); }
+    };
+  }
+
   function render() {
     if (screen === "habits") renderHabits();
     else if (screen === "tasks") renderTasks();
     else if (screen === "calendar") renderCalendar();
-    else renderHealth();
+    else if (screen === "health") renderHealth();
+    else if (screen === "focus") renderFocus();
+    else if (screen === "sketches") renderSketches();
   }
 
   /* ---------- Screen-Wechsel ---------- */
-  function switchScreen(name) {
+  function visibleSections() {
+    return state.settings.sections.filter((section) => section.visible);
+  }
+
+  function firstVisibleSection() {
+    return visibleSections()[0]?.id || "habits";
+  }
+
+  function renderTabbar() {
+    const tabbar = $("#tabbar");
+    if (!tabbar) return;
+    const visible = visibleSections();
+    tabbar.dataset.count = String(visible.length);
+    tabbar.innerHTML = visible.map(({ id }) => {
+      const definition = APP_SECTIONS.find((section) => section.id === id);
+      return `<button class="tab ${screen === id ? "is-active" : ""}" data-screen="${id}" aria-label="${escapeHtml(definition.label)}" ${screen === id ? 'aria-current="page"' : ""}>${SECTION_ICONS[id]}<span>${escapeHtml(definition.shortLabel)}</span></button>`;
+    }).join("");
+  }
+
+  function switchScreen(name, { focusTab = false } = {}) {
+    if (!visibleSections().some((section) => section.id === name)) name = firstVisibleSection();
     screen = name;
-    $("#screen-habits").hidden = name !== "habits";
-    $("#screen-tasks").hidden = name !== "tasks";
-    $("#screen-calendar").hidden = name !== "calendar";
-    $("#screen-health").hidden = name !== "health";
-    const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender", health: "Gesundheit" };
+    APP_SECTIONS.forEach((section) => {
+      const element = $(`#screen-${section.id}`);
+      if (element) element.hidden = name !== section.id;
+    });
+    const titles = { habits: "Momentum", tasks: "Aufgaben", calendar: "Kalender", health: "Gesundheit", focus: "Fokus", sketches: "Skizzen" };
     $("#appbar-title").textContent = titles[name];
     const wn = weekNumber(currentMonday);
     const openTasks = allTasks().filter((task) => !task.done).length;
-    $("#appbar-sub").textContent = name === "habits" ? (wn > 0 ? "Woche " + wn : "Rückblick") : name === "calendar" ? `${MONTHS[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}` : name === "health" ? "Dein Tagesstand" : `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
-    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
+    $("#appbar-sub").textContent = name === "habits"
+      ? (wn > 0 ? "Woche " + wn : "Rückblick")
+      : name === "calendar"
+        ? `${MONTHS[calendarMonth.getMonth()]} ${calendarMonth.getFullYear()}`
+        : name === "health"
+          ? "Dein Tagesstand"
+          : name === "focus"
+            ? "Konzentriert arbeiten"
+            : name === "sketches"
+              ? "Ideen festhalten"
+              : `${openTasks} offene ${openTasks === 1 ? "Aufgabe" : "Aufgaben"}`;
+    state.settings.lastScreen = name;
+    try { persistLocalState(); } catch (_error) { /* Der nächste reguläre Save versucht es erneut. */ }
+    renderTabbar();
     render();
+    if (focusTab) $("#tabbar")?.querySelector(`[data-screen="${name}"]`)?.focus();
     window.scrollTo({ top: 0 });
   }
 
@@ -1057,23 +1881,47 @@
     cloudSyncTimer = setTimeout(flushCloudState, 650);
   }
 
+  function isCloudStateConflict(error) {
+    return String(error?.message || error || "").includes("state_conflict") || String(error?.code || "") === "40001";
+  }
+
   async function flushCloudState() {
-    if (!cloudUser || !window.MomentumCloud?.available) return;
+    if (!cloudUser || !window.MomentumCloud?.available) return { ok: false, skipped: true };
     clearTimeout(cloudSyncTimer);
     cloudSaveRequested = true;
     if (cloudSaveInFlight) return cloudSaveInFlight;
 
     cloudSaveInFlight = (async () => {
+      let result = { ok: true };
+      let conflictRetries = 0;
       try {
         do {
           cloudSaveRequested = false;
           const userId = cloudUser?.id;
-          if (!userId) break;
+          if (!userId) return { ok: false, cancelled: true };
           const snapshot = cloneState(state);
           const revision = stateRevision(snapshot);
           setCloudStatus("Synchronisiert …");
-          await window.MomentumCloud.saveState(userId, snapshot);
-          if (cloudUser?.id === userId && stateRevision(state) > revision) cloudSaveRequested = true;
+          try {
+            const saved = await window.MomentumCloud.saveState(userId, snapshot, cloudStateVersion);
+            if (cloudUser?.id !== userId) return { ok: false, cancelled: true };
+            cloudStateVersion = Math.max(1, Math.round(Number(saved?.version) || cloudStateVersion + 1));
+            lastCloudSyncedRevision = Math.max(lastCloudSyncedRevision, revision);
+            conflictRetries = 0;
+          } catch (error) {
+            if (!isCloudStateConflict(error) || conflictRetries >= 3) throw error;
+            conflictRetries += 1;
+            const remote = await window.MomentumCloud.loadState(userId);
+            if (cloudUser?.id !== userId) return { ok: false, cancelled: true };
+            if (!remote?.state) throw error;
+            cloudStateVersion = Math.max(1, Math.round(Number(remote.version) || 1));
+            state = mergeLegacyStates(normalizeState(remote.state), state);
+            persistLocalState();
+            render();
+            cloudSaveRequested = true;
+            continue;
+          }
+          if (stateRevision(state) > revision) cloudSaveRequested = true;
         } while (cloudSaveRequested);
         if (cloudUser) setCloudStatus(`Synchronisiert · ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
       } catch (error) {
@@ -1081,9 +1929,11 @@
         cloudSaveRequested = false;
         setCloudStatus(navigator.onLine ? "Synchronisierung fehlgeschlagen – neuer Versuch folgt" : "Offline – wird später synchronisiert");
         if (navigator.onLine) cloudSyncTimer = setTimeout(flushCloudState, 5000);
+        result = { ok: false, error };
       } finally {
         cloudSaveInFlight = null;
       }
+      return result;
     })();
     return cloudSaveInFlight;
   }
@@ -1097,6 +1947,9 @@
     calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     calendarSelected = todayStr();
     healthSelected = todayStr();
+    const requestedScreen = state.settings.lastScreen;
+    screen = visibleSections().some((section) => section.id === requestedScreen) ? requestedScreen : firstVisibleSection();
+    renderTabbar();
   }
 
   function setAuthMessage(message, isError) {
@@ -1142,6 +1995,8 @@
     if (!user || activatingUserId === user.id) return;
     activatingUserId = user.id;
     showAuth("Dein Stand wird geladen …");
+    const accountLocalRaw = loadUserLocal(user.id);
+    const accountLocal = accountLocalRaw ? normalizeState(accountLocalRaw) : null;
     try {
       cloudProfile = await window.MomentumCloud.profile(user.id);
       if (cloudProfile.status === "blocked") {
@@ -1153,9 +2008,7 @@
       const remoteRawState = remote?.state && Object.keys(remote.state).length ? remote.state : null;
       let repairedDuplicateHabits = stateHasDuplicateHabits(remoteRawState);
       const remoteState = remoteRawState ? normalizeState(remoteRawState) : null;
-      const accountLocalRaw = loadUserLocal(user.id);
       repairedDuplicateHabits ||= stateHasDuplicateHabits(accountLocalRaw);
-      const accountLocal = accountLocalRaw ? normalizeState(accountLocalRaw) : null;
       const legacyOwner = localStorage.getItem(LEGACY_OWNER_KEY);
       let legacyLocalRaw = null;
       let legacyLocal = null;
@@ -1203,19 +2056,40 @@
         shouldUpload = true;
       }
       cloudUser = user;
+      cloudStateVersion = Math.max(0, Math.round(Number(remote?.version) || 0));
+      lastCloudSyncedRevision = remoteState ? stateRevision(remoteState) : 0;
       localStorage.setItem(userStorageKey(user.id), JSON.stringify(state));
-      if (shouldUpload) await window.MomentumCloud.saveState(user.id, cloneState(state));
+      if (shouldUpload) {
+        const upload = await flushCloudState();
+        if (!upload?.ok) throw upload?.error || new Error("Cloud-Synchronisierung fehlgeschlagen");
+      }
       if (!localStorage.getItem(LEGACY_OWNER_KEY)) localStorage.setItem(LEGACY_OWNER_KEY, user.id);
       cloudIsAdmin = await window.MomentumCloud.isAdmin();
       setCloudStatus("Synchronisiert");
       resetViewState();
       showApp();
-      switchScreen("habits");
+      switchScreen(screen);
+      initSketches(user.id).catch((error) => console.warn("Skizzenstart fehlgeschlagen", error));
       if (repairedDuplicateHabits) toast("Doppelte Gewohnheiten wurden zusammengeführt");
     } catch (error) {
       console.error("Konto konnte nicht geladen werden", error);
-      cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
-      showAuth(friendlyAuthError(error), true);
+      const networkFailure = !navigator.onLine || /fetch|network|load failed|timeout/i.test(String(error?.message || error));
+      if (accountLocal && networkFailure) {
+        cloudUser = user;
+        cloudProfile = null;
+        cloudIsAdmin = false;
+        cloudStateVersion = 0;
+        lastCloudSyncedRevision = 0;
+        state = accountLocal;
+        setCloudStatus("Offline – lokaler Stand geöffnet");
+        resetViewState();
+        showApp();
+        switchScreen(screen);
+        initSketches(user.id).catch((sketchError) => console.warn("Skizzenstart fehlgeschlagen", sketchError));
+      } else {
+        cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
+        showAuth(friendlyAuthError(error), true);
+      }
     } finally {
       activatingUserId = null;
     }
@@ -1339,7 +2213,14 @@
   let toastTimer;
   function toast(msg) {
     let el = $(".toast");
-    if (!el) { el = document.createElement("div"); el.className = "toast"; document.body.appendChild(el); }
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      el.setAttribute("aria-atomic", "true");
+      document.body.appendChild(el);
+    }
     el.textContent = msg;
     requestAnimationFrame(() => el.classList.add("is-show"));
     clearTimeout(toastTimer);
@@ -1349,14 +2230,65 @@
   /* ============================================================
      Modals / Sheets
      ============================================================ */
+  let sheetReturnFocus = null;
+  let sheetKeyHandler = null;
+  let sheetInertState = [];
+  let sheetRootWasInert = false;
+
   function openSheet(html) {
     const root = $("#modal-root");
-    root.innerHTML = `<div class="modal-backdrop"><div class="sheet"><div class="sheet__grip"></div>${html}</div></div>`;
+    const replacingSheet = !!root.firstElementChild;
+    if (sheetKeyHandler) document.removeEventListener("keydown", sheetKeyHandler);
+    sheetInertState.forEach(({ element, inert }) => { element.inert = inert; });
+    sheetInertState = [];
+    if (!replacingSheet) sheetReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sheetRootWasInert = replacingSheet ? sheetRootWasInert : root.inert;
+    root.inert = false;
+    root.innerHTML = `<div class="modal-backdrop"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="sheet__grip"></div>${html}</div></div>`;
     const bd = root.querySelector(".modal-backdrop");
+    const sheet = root.querySelector(".sheet");
+    const title = sheet.querySelector(".sheet__title");
+    if (title) {
+      title.id = `sheet-title-${uid()}`;
+      sheet.setAttribute("aria-labelledby", title.id);
+    } else {
+      sheet.setAttribute("aria-label", "Dialog");
+    }
+    sheetInertState = [...$("#app").children]
+      .filter((element) => element !== root)
+      .map((element) => ({ element, inert: element.inert }));
+    sheetInertState.forEach(({ element }) => { element.inert = true; });
+    sheetKeyHandler = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); closeSheet(); return; }
+      if (event.key !== "Tab") return;
+      const focusable = [...sheet.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
+        .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+      if (!focusable.length) { event.preventDefault(); sheet.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", sheetKeyHandler);
     bd.addEventListener("click", (e) => { if (e.target === bd) closeSheet(); });
-    return root.querySelector(".sheet");
+    requestAnimationFrame(() => {
+      const first = sheet.querySelector('input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled]),a[href]');
+      (first || sheet).focus();
+    });
+    return sheet;
   }
-  function closeSheet() { $("#modal-root").innerHTML = ""; }
+  function closeSheet() {
+    if (sheetKeyHandler) document.removeEventListener("keydown", sheetKeyHandler);
+    sheetKeyHandler = null;
+    $("#modal-root").innerHTML = "";
+    $("#modal-root").inert = sheetRootWasInert;
+    sheetRootWasInert = false;
+    sheetInertState.forEach(({ element, inert }) => { element.inert = inert; });
+    sheetInertState = [];
+    const target = sheetReturnFocus;
+    sheetReturnFocus = null;
+    if (target?.isConnected) target.focus();
+  }
 
   function archiveTask(id) {
     const found = findTask(id); if (!found) return;
@@ -1495,6 +2427,20 @@
           <button class="mini-btn is-danger" data-act="del">🗑</button>
         </span>
       </div>`).join("");
+    const visibleSectionCount = visibleSections().length;
+    const sectionManager = state.settings.sections.map((entry, index) => {
+      const definition = APP_SECTIONS.find((section) => section.id === entry.id);
+      const cannotHide = entry.visible && visibleSectionCount === 1;
+      return `<div class="section-row ${entry.visible ? "" : "is-hidden"}" data-section-id="${entry.id}">
+        <button class="section-row__drag" type="button" aria-label="${escapeHtml(definition.label)} verschieben" title="Ziehen zum Sortieren">⠿</button>
+        <span class="section-row__name">${escapeHtml(definition.label)}</span>
+        <span class="section-row__moves">
+          <button type="button" data-section-move="up" aria-label="${escapeHtml(definition.label)} nach oben" ${index === 0 ? "disabled" : ""}>▲</button>
+          <button type="button" data-section-move="down" aria-label="${escapeHtml(definition.label)} nach unten" ${index === state.settings.sections.length - 1 ? "disabled" : ""}>▼</button>
+        </span>
+        <label class="section-toggle" title="${entry.visible ? "Bereich ausblenden" : "Bereich einblenden"}"><input type="checkbox" data-section-visible ${entry.visible ? "checked" : ""} ${cannotHide ? "disabled" : ""} aria-label="${escapeHtml(definition.label)} anzeigen"><i></i></label>
+      </div>`;
+    }).join("");
 
     const sheet = openSheet(`
       <div class="sheet__head">
@@ -1530,6 +2476,11 @@
         <button class="btn btn--ghost" id="export-data">Export</button>
         <button class="btn btn--ghost" id="import-data">Import</button>
       </div>
+
+      <div class="section-label">Bereiche</div>
+      <p class="section-manager__hint">Lege fest, was unten erscheint. Ziehe am Griff oder nutze die Pfeile. Ausblenden löscht keine Daten.</p>
+      <div class="section-manager" id="section-manager">${sectionManager}</div>
+      <div class="sr-only" id="section-manager-status" role="status" aria-live="polite"></div>
       <p class="settings-version">Momentum ${APP_VERSION}</p>
       <input type="file" id="import-file" accept="application/json" hidden>
     `);
@@ -1541,9 +2492,41 @@
     sheet.querySelector("#account-logout").onclick = async () => {
       const logoutButton = sheet.querySelector("#account-logout");
       logoutButton.disabled = true;
+      const logoutSketchUserId = sketchUserId;
+      if (sketchEditor?.isDirty?.()) {
+        try { await sketchEditor.save("logout"); }
+        catch (_error) {
+          toast("Die offene Skizze konnte nicht lokal gespeichert werden");
+          logoutButton.disabled = false;
+          return;
+        }
+      }
+
+      const mainSyncResult = navigator.onLine ? await flushCloudState() : { ok: false, skipped: true };
+      const sketchSyncResult = navigator.onLine ? await syncSketchDocuments() : { ok: false, skipped: true };
+      const localSketches = sketchStore && logoutSketchUserId ? await sketchStore.list(logoutSketchUserId).catch(() => []) : [];
+      const unsyncedSketches = localSketches.filter(sketchIsDirty);
+      const mainStateDirty = !!cloudUser && stateRevision(state) > lastCloudSyncedRevision;
+      const syncIncomplete = mainStateDirty || unsyncedSketches.length > 0 || !mainSyncResult?.ok || (!sketchSyncResult?.ok && unsyncedSketches.length > 0);
+      let confirmedOfflineRisk = false;
+      if (syncIncomplete) {
+        const parts = [];
+        if (mainStateDirty) parts.push("Änderungen an Gewohnheiten, Tasks, Kalender oder Fokus");
+        if (unsyncedSketches.length) parts.push(`${unsyncedSketches.length} ${unsyncedSketches.length === 1 ? "Skizze" : "Skizzen"}`);
+        const detail = parts.length ? parts.join(" und ") : "Änderungen";
+        if (!confirm(`${detail} sind noch nicht sicher in der Cloud. Beim Abmelden werden die lokalen Kopien entfernt. Trotzdem abmelden?`)) {
+          logoutButton.disabled = false;
+          return;
+        }
+        confirmedOfflineRisk = true;
+      }
+
+      if (!navigator.onLine && !confirmedOfflineRisk && !confirm("Du bist offline. Die Abmeldung kann deshalb nur auf diesem Gerät ausgeführt werden. Fortfahren?")) {
+        logoutButton.disabled = false;
+        return;
+      }
       let signOutResult = { everywhere: false };
       let hardReload = false;
-      try { await flushCloudState(); } catch (_error) { /* Cloud-Retry nicht abwarten. */ }
       closeSheet();
       try {
         signOutResult = await window.MomentumCloud.signOut();
@@ -1551,10 +2534,17 @@
         console.warn("Globale Abmeldung war nicht erreichbar; lokale Sitzung wird entfernt.", error);
         hardReload = true;
       }
+      sketchSyncGeneration += 1;
+      clearTimeout(sketchSyncTimer);
+      if (sketchEditor) await sketchEditor.destroy({ save: false }).catch(() => {});
       await purgePrivateBrowserData();
+      if (sketchStore && logoutSketchUserId) await sketchStore.purge(logoutSketchUserId).catch(() => {});
+      sketchEditor = null; activeSketch = null;
+      sketchStore = null; sketchUserId = null; sketchDocuments = [];
       clearTimeout(cloudSyncTimer);
       cloudSaveRequested = false;
       cloudUser = null; cloudProfile = null; cloudIsAdmin = false;
+      cloudStateVersion = 0; lastCloudSyncedRevision = 0;
       state = normalizeState(seedState());
       showAuth(signOutResult.everywhere
         ? "Du bist auf allen Geräten abgemeldet. Lokale Daten wurden entfernt."
@@ -1600,9 +2590,97 @@
     });
 
     sheet.querySelector("#add-habit").onclick = () => openHabitEditor(null);
+    bindSectionManager(sheet);
     sheet.querySelector("#export-data").onclick = exportData;
     sheet.querySelector("#import-data").onclick = () => sheet.querySelector("#import-file").click();
     sheet.querySelector("#import-file").addEventListener("change", importData);
+  }
+
+  function bindSectionManager(sheet) {
+    const manager = sheet.querySelector("#section-manager");
+    if (!manager) return;
+    const status = sheet.querySelector("#section-manager-status");
+    const syncManagerDom = (message = "") => {
+      const restoreFocus = document.activeElement;
+      const rows = new Map([...manager.querySelectorAll("[data-section-id]")].map((row) => [row.dataset.sectionId, row]));
+      const visibleCount = visibleSections().length;
+      state.settings.sections.forEach((entry, index) => {
+        const row = rows.get(entry.id);
+        if (!row) return;
+        manager.appendChild(row);
+        row.classList.toggle("is-hidden", !entry.visible);
+        row.querySelector('[data-section-move="up"]').disabled = index === 0;
+        row.querySelector('[data-section-move="down"]').disabled = index === state.settings.sections.length - 1;
+        const input = row.querySelector("[data-section-visible]");
+        input.checked = entry.visible;
+        input.disabled = entry.visible && visibleCount === 1;
+        input.closest("label").title = entry.visible ? "Bereich ausblenden" : "Bereich einblenden";
+      });
+      if (status && message) status.textContent = message;
+      if (restoreFocus?.isConnected) restoreFocus.focus();
+    };
+    const persistLayout = (nextLayout = null) => {
+      if (nextLayout) state.settings.sections = normalizeSectionLayout(nextLayout);
+      save();
+      renderTabbar();
+      if (!visibleSections().some((section) => section.id === screen)) switchScreen(firstVisibleSection());
+    };
+
+    manager.addEventListener("click", (event) => {
+      const move = event.target.closest("[data-section-move]");
+      if (!move) return;
+      const row = move.closest("[data-section-id]");
+      const index = state.settings.sections.findIndex((section) => section.id === row.dataset.sectionId);
+      const targetIndex = move.dataset.sectionMove === "up" ? index - 1 : index + 1;
+      if (index < 0 || targetIndex < 0 || targetIndex >= state.settings.sections.length) return;
+      const next = state.settings.sections.map((section) => ({ ...section }));
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      persistLayout(next);
+      syncManagerDom(`${APP_SECTIONS.find((section) => section.id === row.dataset.sectionId)?.label || "Bereich"} verschoben`);
+    });
+
+    manager.addEventListener("change", (event) => {
+      const input = event.target.closest("[data-section-visible]");
+      if (!input) return;
+      const id = input.closest("[data-section-id]").dataset.sectionId;
+      const next = state.settings.sections.map((section) => section.id === id ? { ...section, visible: input.checked } : { ...section });
+      if (!next.some((section) => section.visible)) {
+        input.checked = true;
+        toast("Mindestens ein Bereich muss sichtbar bleiben");
+        return;
+      }
+      persistLayout(next);
+      syncManagerDom(`${APP_SECTIONS.find((section) => section.id === id)?.label || "Bereich"} ${input.checked ? "eingeblendet" : "ausgeblendet"}`);
+    });
+
+    manager.querySelectorAll(".section-row__drag").forEach((handle) => {
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const row = handle.closest("[data-section-id]");
+        row.classList.add("is-dragging");
+        handle.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        const moveRow = (moveEvent) => {
+          const rows = [...manager.querySelectorAll("[data-section-id]")].filter((item) => item !== row);
+          const before = rows.find((item) => moveEvent.clientY < item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2);
+          if (before) manager.insertBefore(row, before);
+          else manager.appendChild(row);
+        };
+        const finish = () => {
+          handle.removeEventListener("pointermove", moveRow);
+          handle.removeEventListener("pointerup", finish);
+          handle.removeEventListener("pointercancel", finish);
+          row.classList.remove("is-dragging");
+          const byId = new Map(state.settings.sections.map((section) => [section.id, section]));
+          const next = [...manager.querySelectorAll("[data-section-id]")].map((item) => ({ ...byId.get(item.dataset.sectionId) }));
+          persistLayout(next);
+          syncManagerDom("Bereichsreihenfolge gespeichert");
+        };
+        handle.addEventListener("pointermove", moveRow);
+        handle.addEventListener("pointerup", finish);
+        handle.addEventListener("pointercancel", finish);
+      });
+    });
   }
 
   function openHabitEditor(habit) {
@@ -1665,34 +2743,81 @@
   }
 
   /* ---------- Export / Import ---------- */
-  function exportData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `momentum-backup-${todayStr()}.json`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("Backup exportiert");
+  async function exportData() {
+    try {
+      if (sketchEditor?.isDirty?.()) await sketchEditor.save("backup");
+      const sketches = sketchStore && sketchUserId
+        ? (await sketchStore.list(sketchUserId)).filter((documentValue) => !documentValue.deletedAt)
+        : [];
+      const backup = {
+        format: "momentum-backup",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        state: cloneState(state),
+        sketches,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `momentum-backup-${todayStr()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Backup mit ${sketches.length} ${sketches.length === 1 ? "Skizze" : "Skizzen"} exportiert`);
+    } catch (error) {
+      console.warn("Backup fehlgeschlagen", error);
+      toast("Backup konnte nicht erstellt werden");
+    }
   }
   function importData(e) {
     const file = e.target.files[0]; if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Import fehlgeschlagen: Die Datei ist größer als 5 MB.");
+    if (file.size > 80 * 1024 * 1024) {
+      alert("Import fehlgeschlagen: Die Datei ist größer als 80 MB.");
       e.target.value = "";
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
-        const s = JSON.parse(reader.result);
-        if (!s || !Array.isArray(s.habits)) throw new Error("Ungültige Datei");
+        const parsed = JSON.parse(reader.result);
+        const importedState = parsed?.format === "momentum-backup" ? parsed.state : parsed;
+        if (!importedState || !Array.isArray(importedState.habits)) throw new Error("Ungültige Datei");
         // Importierte Dateien sind nicht vertrauenswürdig. normalizeState
         // begrenzt Mengen, Typen, IDs, Datumswerte und sämtliche Freitexte.
-        state = normalizeState(s); save(); applyTheme();
+        state = normalizeState(importedState); save(); applyTheme();
+        let importedSketchCount = 0;
+        if (parsed?.format === "momentum-backup" && Array.isArray(parsed.sketches) && parsed.sketches.length) {
+          if (!sketchStore || !sketchUserId || !sketchApi()) throw new Error("Skizzenspeicher ist nicht bereit");
+          const existing = await sketchStore.list(sketchUserId);
+          const usedIds = new Set(existing.map((documentValue) => documentValue.id));
+          for (const rawDocument of parsed.sketches.slice(0, 250)) {
+            let documentValue = sketchApi().normalizeDocument(rawDocument);
+            if (usedIds.has(documentValue.id)) {
+              documentValue = sketchApi().normalizeDocument({
+                ...documentValue,
+                id: sketchApi().createId(),
+                title: `${documentValue.title} – Import`,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              });
+            }
+            documentValue = sketchApi().normalizeDocument({
+              ...documentValue,
+              cloudVersion: 0,
+              lastSyncedUpdatedAt: 0,
+              deletedAt: null,
+            });
+            await sketchStore.put(sketchUserId, documentValue);
+            usedIds.add(documentValue.id);
+            importedSketchCount += 1;
+          }
+          sketchDocuments = (await sketchStore.list(sketchUserId)).filter((documentValue) => !documentValue.deletedAt);
+          renderSketches();
+          scheduleSketchSync();
+        }
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
         selectedDate = defaultSelectedFor(currentMonday);
-        closeSheet(); render(); toast("Import erfolgreich");
+        closeSheet(); render(); toast(importedSketchCount ? `Import erfolgreich · ${importedSketchCount} Skizzen` : "Import erfolgreich");
       } catch (err) { alert("Import fehlgeschlagen: " + err.message); }
       finally { e.target.value = ""; }
     };
@@ -1714,11 +2839,51 @@
   function bindEvents() {
     // Tab-Bar
     document.querySelector(".tabbar").addEventListener("click", (e) => {
-      const t = e.target.closest(".tab"); if (t) switchScreen(t.dataset.screen);
+      const t = e.target.closest(".tab"); if (t) switchScreen(t.dataset.screen, { focusTab: true });
     });
 
     // Einstellungen
     $("#btn-settings").addEventListener("click", openSettings);
+
+    // Pomodoro
+    $("#focus-settings").addEventListener("click", openPomodoroSettings);
+    $("#focus-toggle").addEventListener("click", () => {
+      const status = pomodoroApi()?.normalize(state.pomodoro).timer.status || "idle";
+      dispatchPomodoro(status === "running" ? "PAUSE" : status === "paused" ? "RESUME" : "START");
+    });
+    $("#focus-reset").addEventListener("click", () => dispatchPomodoro("RESET"));
+    $("#focus-skip").addEventListener("click", () => dispatchPomodoro("SKIP"));
+
+    // Skizzen
+    $("#add-sketch").addEventListener("click", () => {
+      if (!sketchStore) { toast("Skizzen werden noch geladen"); return; }
+      openSketchDetails(null, true);
+    });
+    $("#sketch-sort").addEventListener("change", (event) => {
+      sketchSortMode = ["updated", "date", "name"].includes(event.target.value) ? event.target.value : "updated";
+      renderSketches();
+    });
+    $("#sketch-grid").addEventListener("click", async (event) => {
+      const openButton = event.target.closest("[data-open-sketch]");
+      const menuButton = event.target.closest("[data-sketch-menu]");
+      const id = openButton?.dataset.openSketch || menuButton?.dataset.sketchMenu;
+      if (!id) return;
+      const documentValue = sketchDocuments.find((entry) => entry.id === id);
+      if (!documentValue) return;
+      if (menuButton) openSketchMenu(documentValue);
+      else {
+        try { await openSketchEditor(documentValue); }
+        catch (error) { console.warn("Skizze konnte nicht geöffnet werden", error); toast("Skizze konnte nicht geöffnet werden"); }
+      }
+    });
+    $("#sketch-editor-menu").addEventListener("click", async () => {
+      if (!sketchEditor) return;
+      try { activeSketch = await sketchEditor.save("before-menu"); } catch (_error) { return; }
+      openSketchMenu(activeSketch);
+    });
+    $("#sketch-zoom-out").addEventListener("click", () => sketchEditor?.zoomBy(.8));
+    $("#sketch-zoom-in").addEventListener("click", () => sketchEditor?.zoomBy(1.25));
+    $("#sketch-zoom-fit").addEventListener("click", () => sketchEditor?.fit());
 
     // Wochen-Navigation
     $("#week-prev").addEventListener("click", () => {
@@ -1889,15 +3054,41 @@
      ============================================================ */
   function init() {
     state = load();
+    if (pomodoroApi()) state.pomodoro = pomodoroApi().normalize(state.pomodoro);
     resetViewState();
     bindAuthEvents();
     bindEvents();
-    initCloud();
-    window.addEventListener("online", flushCloudState);
+    if (LOCAL_PREVIEW) {
+      setCloudStatus("Lokale Vorschau");
+      showApp();
+      switchScreen(screen);
+      initSketches("local-preview").catch((error) => console.warn("Skizzenstart fehlgeschlagen", error));
+    } else {
+      initCloud();
+    }
+    window.addEventListener("online", () => {
+      flushCloudState();
+      syncSketchDocuments();
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") flushCloudState();
+      else {
+        reconcilePomodoro(false);
+        if (screen === "focus") renderFocus();
+        if (navigator.onLine) syncSketchDocuments();
+      }
+    });
+    window.addEventListener("pageshow", () => {
+      reconcilePomodoro(false);
+      if (screen === "focus") renderFocus();
+      if (navigator.onLine) syncSketchDocuments();
     });
     window.addEventListener("pagehide", flushCloudState);
+    clearInterval(pomodoroTicker);
+    pomodoroTicker = setInterval(() => {
+      const changed = reconcilePomodoro(document.visibilityState === "visible");
+      if (screen === "focus" || changed) renderFocus();
+    }, 500);
 
     // Neue App-Versionen sofort übernehmen, auch bei installierter Home-Screen-App.
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -1905,19 +3096,23 @@
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (refreshing) return;
         refreshing = true;
-        let reloading = false;
-        const reload = () => {
-          if (reloading) return;
-          reloading = true;
-          location.reload();
-        };
-        const fallback = setTimeout(reload, 1800);
-        Promise.resolve(flushCloudState()).finally(() => {
-          clearTimeout(fallback);
-          reload();
-        });
+        (async () => {
+          try {
+            if (!$("#sketch-text-panel")?.hidden) {
+              refreshing = false;
+              toast("Update bereit – füge den offenen Text zuerst ein oder brich ihn ab");
+              return;
+            }
+            if (sketchEditor?.isDirty?.()) await sketchEditor.save("app-update");
+            await Promise.allSettled([flushCloudState(), syncSketchDocuments()]);
+            location.reload();
+          } catch (_error) {
+            refreshing = false;
+            toast("Update wartet, bis deine offene Skizze gespeichert ist");
+          }
+        })();
       });
-      navigator.serviceWorker.register("service-worker.js?v=24").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=28").then((registration) => registration.update()).catch(() => {});
     }
   }
 

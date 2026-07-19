@@ -1,7 +1,8 @@
 # Momentum
 
-Eine kleine, schön gestaltete Web-App für **Gewohnheiten** und **Tasks** –
-gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostbar über **GitHub Pages**.
+Momentum 5 ist eine persönliche Alltags-App für **Gewohnheiten, Tasks, Kalender,
+Gesundheit, Fokus und Skizzen**. Sie ist für Handy, iPad und Laptop gebaut und
+läuft als installierbare PWA über **GitHub Pages** mit Supabase als Cloud-Dienst.
 
 ## Funktionen
 
@@ -40,19 +41,33 @@ gebaut für's Handy (iPhone/Android), läuft direkt im Browser, kostenlos hostba
 - Tageshistorie zum schnellen Öffnen vergangener Ernährungseinträge
 - Gesundheitswerte werden pro Benutzer getrennt in der Cloud synchronisiert
 
+**Fokus / Pomodoro**
+- Verlässlicher Fokus-, Kurzpausen- und Langpausen-Timer
+- Frei einstellbare Phasen, automatische Starts, Ton, Vibration und Benachrichtigung
+- Timerstand bleibt nach Sperren, Schließen, Hintergrund und Neuladen korrekt
+- Tages-, Wochen- und Einheitenhistorie
+
+**Skizzen**
+- Mehrere Skizzen mit Titel, Beschreibung, Skizzendatum, Erstell- und Bearbeitungsdatum
+- Vollbild-Vektoreditor für Apple Pencil, Stift, Finger und Maus
+- Stift, Marker, Radierer, Auswahl/Verschieben, Text, Zoom, Undo/Redo und PNG-Export
+- Lokale Offline-Speicherung mit konfliktgeschützter Cloud-Synchronisierung
+- Bedienung auf Handy sowie iPad im Hoch- und Querformat
+
 **Sonstiges**
 - Benutzerkonten mit E-Mail und Passwort
 - Automatische Synchronisierung zwischen Handy, Laptop und PC
 - Strikt getrennte Cloud- und Offline-Daten pro Benutzer
 - Admin-Übersicht für registrierte Konten
 - Hell/Dunkel
+- Alle sechs Bereiche in den Einstellungen sortieren oder ausblenden, ohne Daten zu löschen
 - Läuft offline (PWA) & „Zum Home-Bildschirm hinzufügen"
-- Daten-Export/-Import als Backup
+- Daten-Export/-Import einschließlich Skizzen als Backup
 
 ## Wichtig: Wo liegen die Daten?
 
-Angemeldete Benutzer speichern ihren App-Stand verschlüsselt über **Supabase** in
-einem eigenen, per Row Level Security geschützten Datensatz. Zusätzlich bleibt
+Angemeldete Benutzer übertragen ihren App-Stand per HTTPS an **Supabase** und
+speichern ihn in eigenen, per Row Level Security geschützten Datensätzen. Zusätzlich bleibt
 eine Offline-Kopie auf dem jeweiligen Gerät erhalten. Beim ersten Login wird ein
 vorhandener lokaler Stand automatisch in das eigene Cloud-Konto übernommen.
 Über **Einstellungen → Daten → Export** kann weiterhin ein Backup gesichert werden.
@@ -70,6 +85,7 @@ Die Datenbankstruktur und Zugriffsregeln liegen in `supabase/schema.sql`.
 ```bash
 python -m http.server 8123
 # dann im Browser: http://127.0.0.1:8123
+# lokale UI-Vorschau ohne Cloud-Login: http://127.0.0.1:8123/?preview=1
 ```
 
 ## Über GitHub Pages veröffentlichen
@@ -97,7 +113,12 @@ Danach: Settings → Pages → `main` / `root`.
 |---|---|
 | `index.html` | App-Grundgerüst |
 | `styles.css` | Design |
-| `app.js` | Logik (Gewohnheiten, Tasks, Speicherung) |
+| `app.js` | App-Logik, Bereiche, Cloud- und Offline-Koordination |
+| `pomodoro.js` | Robuste Pomodoro-Zustandsmaschine |
+| `sketch.js` | Vektor-Skizzeneditor und IndexedDB-Speicher |
+| `cloud.js` | Anmeldung und Supabase-Zugriffe |
+| `supabase/schema.sql` | Tabellen, RLS-Regeln und konfliktgeschützte RPCs |
+| `vendor/supabase-2.110.3.js` | Gepinnter Supabase-Client für Offline-Starts |
 | `manifest.webmanifest` | PWA-Infos (Name, Icons) |
 | `service-worker.js` | Offline-Fähigkeit |
 | `icons/` | App-Icons |

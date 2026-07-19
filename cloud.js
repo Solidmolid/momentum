@@ -75,18 +75,43 @@
     async loadState(userId) {
       const data = unwrap(await client
         .from("user_states")
-        .select("state, updated_at")
+        .select("state, version, updated_at")
         .eq("user_id", userId)
         .maybeSingle());
       return data;
     },
 
-    async saveState(userId, state) {
+    async saveState(userId, state, expectedVersion = 0) {
+      void userId; // Die RPC bindet den Datensatz serverseitig an auth.uid().
+      return unwrap(await client.rpc("save_user_state", {
+        p_state: state,
+        p_expected_version: Math.max(0, Math.round(Number(expectedVersion) || 0)),
+      }));
+    },
+
+    async listSketches(userId) {
       return unwrap(await client
-        .from("user_states")
-        .upsert({ user_id: userId, state }, { onConflict: "user_id" })
-        .select("updated_at")
-        .single());
+        .from("sketches")
+        .select("id, document, version, created_at, updated_at, deleted_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false }));
+    },
+
+    async saveSketch(documentValue, expectedVersion = 0) {
+      const { cloudVersion, lastSyncedUpdatedAt, deletedAt, ...document } = documentValue;
+      void cloudVersion; void lastSyncedUpdatedAt; void deletedAt;
+      return unwrap(await client.rpc("save_sketch_document", {
+        p_id: document.id,
+        p_document: document,
+        p_expected_version: Math.max(0, Math.round(Number(expectedVersion) || 0)),
+      }));
+    },
+
+    async deleteSketch(documentId, expectedVersion) {
+      return unwrap(await client.rpc("delete_sketch_document", {
+        p_id: documentId,
+        p_expected_version: Math.max(1, Math.round(Number(expectedVersion) || 1)),
+      }));
     },
 
     async profile(userId) {
