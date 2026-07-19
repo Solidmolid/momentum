@@ -7,7 +7,9 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "5.0";
+  const APP_VERSION = "5.0.1";
+  // Muss mit CACHE in service-worker.js übereinstimmen.
+  const APP_CACHE = "momentum-v29";
   const STATE_VERSION = 7;
   const LOCAL_PREVIEW = typeof location !== "undefined"
     && ["localhost", "127.0.0.1"].includes(location.hostname)
@@ -43,6 +45,9 @@
     { key: "steps", label: "Schritte", short: "Schritte", unit: "" },
   ];
   const NUTRITION_FIELDS = HEALTH_FIELDS.filter((field) => field.key !== "steps");
+  // Hartes Eingabelimit für alle Gesundheitswerte – gilt direkt im Formular,
+  // damit nichts erst später beim Normalisieren still abgeschnitten wird.
+  const HEALTH_VALUE_MAX = 999999;
   const CHECK_SVG =
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
   const SECTION_ICONS = {
@@ -496,7 +501,7 @@
     // Nach dem Abmelden darf kein Kontostand in diesem Browserprofil bleiben.
     for (let index = localStorage.length - 1; index >= 0; index -= 1) {
       const key = localStorage.key(index);
-      if (key === KEY || key === LEGACY_OWNER_KEY || key === "momentum_cloud_session" || key?.startsWith(`${KEY}_user_`)) {
+      if (key === KEY || key === LEGACY_OWNER_KEY || key === "momentum_cloud_session" || key?.startsWith(`${KEY}_user_`) || key?.startsWith("momentum_conflict_backup::")) {
         localStorage.removeItem(key);
       }
     }
@@ -504,7 +509,7 @@
     if (!("caches" in window)) return;
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.filter((name) => name.startsWith("momentum-")).map(async (name) => {
-      if (name !== "momentum-v28") return caches.delete(name);
+      if (name !== APP_CACHE) return caches.delete(name);
       const cache = await caches.open(name);
       const requests = await cache.keys();
       return Promise.all(requests
@@ -1070,7 +1075,7 @@
       const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
       const goalText = goal ? `${formatHealthNumber(value)} / ${formatHealthNumber(goal)} ${field.unit}`.trim() : "Kein Ziel gesetzt";
       const valueMarkup = field.key === "steps"
-        ? `<span class="health-field__value"><input type="number" min="0" step="1" inputmode="numeric" autocomplete="off" name="momentum-health-steps" data-health-field="steps" value="${entry.steps ?? ""}" placeholder="0"><b>${field.unit}</b></span>`
+        ? `<span class="health-field__value"><input type="number" min="0" max="${HEALTH_VALUE_MAX}" step="1" inputmode="numeric" autocomplete="off" name="momentum-health-steps" data-health-field="steps" value="${entry.steps ?? ""}" placeholder="0"><b>${field.unit}</b></span>`
         : `<span class="health-field__value health-field__value--total"><strong>${formatHealthNumber(value)}</strong><b>${field.unit}</b></span>`;
       return `<label class="health-field health-field--${field.key}">
         <span class="health-field__label">${field.label}</span>
@@ -1119,10 +1124,10 @@
       <div class="field"><label for="food-name">Mahlzeit oder Lebensmittel</label><input class="input" id="food-name" maxlength="80" value="${escapeHtml(item.name || "")}" placeholder="z. B. Frühstück oder Proteinshake" autocomplete="off"></div>
       <div class="field"><label for="food-time">Uhrzeit (optional)</label><input class="input" id="food-time" type="time" value="${escapeHtml(item.time || "")}"></div>
       <div class="health-food-fields">
-        <label class="field"><span>Kalorien (kcal)</span><input class="input" id="food-calories" type="number" min="0" step="1" inputmode="decimal" value="${item.calories ?? ""}" placeholder="0"></label>
-        <label class="field"><span>Eiweiß (g)</span><input class="input" id="food-protein" type="number" min="0" step="0.1" inputmode="decimal" value="${item.protein ?? ""}" placeholder="0"></label>
-        <label class="field"><span>Kohlenhydrate (g)</span><input class="input" id="food-carbs" type="number" min="0" step="0.1" inputmode="decimal" value="${item.carbs ?? ""}" placeholder="0"></label>
-        <label class="field"><span>Fett (g)</span><input class="input" id="food-fat" type="number" min="0" step="0.1" inputmode="decimal" value="${item.fat ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Kalorien (kcal)</span><input class="input" id="food-calories" type="number" min="0" max="${HEALTH_VALUE_MAX}" step="1" inputmode="decimal" value="${item.calories ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Eiweiß (g)</span><input class="input" id="food-protein" type="number" min="0" max="${HEALTH_VALUE_MAX}" step="0.1" inputmode="decimal" value="${item.protein ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Kohlenhydrate (g)</span><input class="input" id="food-carbs" type="number" min="0" max="${HEALTH_VALUE_MAX}" step="0.1" inputmode="decimal" value="${item.carbs ?? ""}" placeholder="0"></label>
+        <label class="field"><span>Fett (g)</span><input class="input" id="food-fat" type="number" min="0" max="${HEALTH_VALUE_MAX}" step="0.1" inputmode="decimal" value="${item.fat ?? ""}" placeholder="0"></label>
       </div>
       <p class="field-hint">Du kannst auch nur einen Wert eintragen, zum Beispiel 30 g Eiweiß für einen Shake.</p>
       <button class="btn" id="save-health-food">${isNew ? "Hinzufügen" : "Änderungen speichern"}</button>
@@ -1139,7 +1144,7 @@
         const input = sheet.querySelector(`#food-${field.key}`);
         if (input.value !== "") {
           const value = Number(input.value);
-          foodItem[field.key] = Number.isFinite(value) && value >= 0 ? value : 0;
+          foodItem[field.key] = Number.isFinite(value) && value >= 0 ? Math.min(value, HEALTH_VALUE_MAX) : 0;
         }
       });
       if (!NUTRITION_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(foodItem, field.key))) {
@@ -1166,13 +1171,13 @@
     const sheet = openSheet(`
       <div class="sheet__head"><div><span class="sheet__eyebrow">Gesundheit</span><div class="sheet__title">Deine Tagesziele</div></div><button class="sheet__close" data-close>Abbrechen</button></div>
       <p class="field-hint" style="margin:0 0 14px">Lege deine Werte selbst fest. Sie dienen nur deiner persönlichen Übersicht und sind keine medizinische Empfehlung.</p>
-      <div class="health-goal-fields">${HEALTH_FIELDS.map((field) => `<label class="field"><span>${field.label}${field.unit ? ` (${field.unit})` : ""}</span><input class="input" type="number" min="0" step="1" inputmode="decimal" autocomplete="off" data-health-goal="${field.key}" value="${state.health.goals[field.key] || ""}" placeholder="Kein Ziel"></label>`).join("")}</div>
+      <div class="health-goal-fields">${HEALTH_FIELDS.map((field) => `<label class="field"><span>${field.label}${field.unit ? ` (${field.unit})` : ""}</span><input class="input" type="number" min="0" max="${HEALTH_VALUE_MAX}" step="1" inputmode="decimal" autocomplete="off" data-health-goal="${field.key}" value="${state.health.goals[field.key] || ""}" placeholder="Kein Ziel"></label>`).join("")}</div>
       <button class="btn" id="save-health-goals">Ziele speichern</button>`);
     sheet.querySelector("[data-close]").onclick = closeSheet;
     sheet.querySelector("#save-health-goals").onclick = () => {
       sheet.querySelectorAll("[data-health-goal]").forEach((input) => {
         const value = Number(input.value);
-        state.health.goals[input.dataset.healthGoal] = Number.isFinite(value) && value > 0 ? value : 0;
+        state.health.goals[input.dataset.healthGoal] = Number.isFinite(value) && value > 0 ? Math.min(value, HEALTH_VALUE_MAX) : 0;
       });
       save(); closeSheet(); renderHealth(); toast("Gesundheitsziele gespeichert");
     };
@@ -1189,18 +1194,36 @@
     return window.MomentumPomodoro || null;
   }
 
+  function showPomodoroNotification(effect) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const title = `${focusPhaseLabel(effect.phase)} beendet`;
+    const options = {
+      body: `${focusPhaseLabel(effect.nextPhase)} ist als Nächstes bereit.`,
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+      tag: "momentum-pomodoro",
+    };
+    const showDirect = () => {
+      try { new Notification(title, options); }
+      catch (_error) { /* Benachrichtigung ist optional. */ }
+    };
+    // Android und iOS erlauben PWA-Benachrichtigungen nur über den Service
+    // Worker; der direkte Konstruktor bleibt als Desktop-Fallback erhalten.
+    const registrationPromise = navigator.serviceWorker?.getRegistration?.();
+    if (!registrationPromise) { showDirect(); return; }
+    registrationPromise
+      .then((registration) => {
+        if (!registration?.showNotification) return Promise.reject(new Error("sw-notification-unavailable"));
+        return registration.showNotification(title, options);
+      })
+      .catch(showDirect);
+  }
+
   function handlePomodoroEffects(effects) {
     (effects || []).forEach((effect) => {
       if (effect.type === "sound") playPomodoroSound();
       else if (effect.type === "vibration" && navigator.vibrate) navigator.vibrate([180, 80, 180]);
-      else if (effect.type === "notification" && "Notification" in window && Notification.permission === "granted") {
-        try {
-          new Notification(`${focusPhaseLabel(effect.phase)} beendet`, {
-            body: `${focusPhaseLabel(effect.nextPhase)} ist als Nächstes bereit.`,
-            icon: "icons/icon-192.png",
-          });
-        } catch (_error) { /* iOS kann Notifications nur über den Service Worker erlauben. */ }
-      }
+      else if (effect.type === "notification") showPomodoroNotification(effect);
     });
   }
 
@@ -1874,6 +1897,53 @@
     if (el) el.textContent = label;
   }
 
+  /* ---------- Konfliktsicherungen ---------- */
+  // Wird ein lokaler Stand durch eine parallele Änderung überschrieben oder
+  // zusammengeführt, bleibt die verdrängte Fassung hier als sichtbare,
+  // herunterladbare Sicherung erhalten (die zwei neuesten pro Konto).
+  const conflictBackupKey = (userId) => `momentum_conflict_backup::${userId}`;
+
+  function readConflictBackups(userId) {
+    if (!userId) return [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem(conflictBackupKey(userId)) || "null");
+      return Array.isArray(parsed?.backups) ? parsed.backups : [];
+    } catch (_error) { return []; }
+  }
+
+  function storeConflictBackup(userId, snapshot, reason) {
+    if (!userId || !snapshot) return;
+    let backups = [{ savedAt: new Date().toISOString(), reason, state: snapshot }, ...readConflictBackups(userId)].slice(0, 2);
+    while (backups.length) {
+      try {
+        localStorage.setItem(conflictBackupKey(userId), JSON.stringify({ format: "momentum-conflict-backup", version: 1, backups }));
+        return;
+      } catch (_error) { backups = backups.slice(0, backups.length - 1); }
+    }
+  }
+
+  function clearConflictBackups(userId) {
+    try { localStorage.removeItem(conflictBackupKey(userId)); } catch (_error) { /* Speicher nicht verfügbar. */ }
+  }
+
+  function downloadConflictBackups() {
+    const backups = readConflictBackups(cloudUser?.id);
+    if (!backups.length) { toast("Keine Konfliktsicherung vorhanden"); return; }
+    try {
+      const payload = { format: "momentum-conflict-backup", version: 1, exportedAt: new Date().toISOString(), backups };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `momentum-konfliktsicherung-${todayStr()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`${backups.length === 1 ? "Eine Konfliktsicherung" : `${backups.length} Konfliktsicherungen`} heruntergeladen`);
+    } catch (error) {
+      console.warn("Konfliktsicherung konnte nicht heruntergeladen werden", error);
+      toast("Download fehlgeschlagen");
+    }
+  }
+
   function scheduleCloudSave() {
     if (!cloudUser || !window.MomentumCloud?.available) return;
     setCloudStatus("Änderungen werden gespeichert …");
@@ -1915,6 +1985,8 @@
             if (cloudUser?.id !== userId) return { ok: false, cancelled: true };
             if (!remote?.state) throw error;
             cloudStateVersion = Math.max(1, Math.round(Number(remote.version) || 1));
+            // Die lokale Fassung vor dem Zusammenführen sichern – nichts geht still verloren.
+            storeConflictBackup(userId, snapshot, "Parallele Änderung beim Synchronisieren");
             state = mergeLegacyStates(normalizeState(remote.state), state);
             persistLocalState();
             render();
@@ -2037,9 +2109,11 @@
           state = localRevision >= remoteRevision ? mergeLegacyStates(remoteState, localState) : mergeLegacyStates(localState, remoteState);
           shouldUpload = true;
         } else if (localRevision > remoteRevision) {
+          storeConflictBackup(user.id, remoteState, "Anmeldung: Cloud-Stand wurde durch neueren lokalen Stand ersetzt");
           state = localState;
           shouldUpload = true;
         } else {
+          if (localRevision !== remoteRevision) storeConflictBackup(user.id, localState, "Anmeldung: Lokaler Stand wurde durch neueren Cloud-Stand ersetzt");
           state = remoteState;
         }
       } else if (localState) {
@@ -2406,7 +2480,15 @@
     };
   }
 
+  const formatConflictBackupDate = (savedAt) => {
+    const parsed = new Date(savedAt);
+    return Number.isFinite(parsed.getTime())
+      ? parsed.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " Uhr"
+      : "unbekannt";
+  };
+
   function openSettings() {
+    const conflictBackups = readConflictBackups(cloudUser?.id);
     const accountName = cloudProfile?.display_name || cloudUser?.email?.split("@")[0] || "Konto";
     const accountEmail = cloudProfile?.email || cloudUser?.email || "";
     const accountInitial = accountName.trim().charAt(0).toUpperCase() || "M";
@@ -2476,6 +2558,12 @@
         <button class="btn btn--ghost" id="export-data">Export</button>
         <button class="btn btn--ghost" id="import-data">Import</button>
       </div>
+      ${conflictBackups.length ? `
+      <p class="field-hint" style="margin:10px 2px 6px">Bei einer parallelen Änderung wurde eine frühere Fassung aufgehoben (zuletzt ${escapeHtml(formatConflictBackupDate(conflictBackups[0].savedAt))}). Du kannst sie herunterladen und bei Bedarf über „Import" wiederherstellen.</p>
+      <div class="btn-row">
+        <button class="btn btn--ghost" id="download-conflict-backup">Konfliktsicherung herunterladen</button>
+        <button class="btn btn--ghost" id="clear-conflict-backup">Verwerfen</button>
+      </div>` : ""}
 
       <div class="section-label">Bereiche</div>
       <p class="section-manager__hint">Lege fest, was unten erscheint. Ziehe am Griff oder nutze die Pfeile. Ausblenden löscht keine Daten.</p>
@@ -2594,6 +2682,15 @@
     sheet.querySelector("#export-data").onclick = exportData;
     sheet.querySelector("#import-data").onclick = () => sheet.querySelector("#import-file").click();
     sheet.querySelector("#import-file").addEventListener("change", importData);
+    const downloadConflictButton = sheet.querySelector("#download-conflict-backup");
+    if (downloadConflictButton) downloadConflictButton.onclick = downloadConflictBackups;
+    const clearConflictButton = sheet.querySelector("#clear-conflict-backup");
+    if (clearConflictButton) clearConflictButton.onclick = () => {
+      if (!confirm("Konfliktsicherung wirklich verwerfen? Sie kann danach nicht mehr heruntergeladen werden.")) return;
+      clearConflictBackups(cloudUser?.id);
+      toast("Konfliktsicherung verworfen");
+      openSettings();
+    };
   }
 
   function bindSectionManager(sheet) {
@@ -2778,13 +2875,17 @@
     const reader = new FileReader();
     reader.onload = async () => {
       try {
+        // Phase 1: Alles prüfen und vorbereiten, ohne den App-Zustand anzufassen.
+        // Schlägt hier irgendetwas fehl, bleibt der bisherige Stand unberührt.
         const parsed = JSON.parse(reader.result);
-        const importedState = parsed?.format === "momentum-backup" ? parsed.state : parsed;
+        const importedState = parsed?.format === "momentum-backup" ? parsed.state
+          : parsed?.format === "momentum-conflict-backup" ? parsed?.backups?.[0]?.state
+          : parsed;
         if (!importedState || !Array.isArray(importedState.habits)) throw new Error("Ungültige Datei");
         // Importierte Dateien sind nicht vertrauenswürdig. normalizeState
         // begrenzt Mengen, Typen, IDs, Datumswerte und sämtliche Freitexte.
-        state = normalizeState(importedState); save(); applyTheme();
-        let importedSketchCount = 0;
+        const nextState = normalizeState(importedState);
+        const preparedSketches = [];
         if (parsed?.format === "momentum-backup" && Array.isArray(parsed.sketches) && parsed.sketches.length) {
           if (!sketchStore || !sketchUserId || !sketchApi()) throw new Error("Skizzenspeicher ist nicht bereit");
           const existing = await sketchStore.list(sketchUserId);
@@ -2806,10 +2907,28 @@
               lastSyncedUpdatedAt: 0,
               deletedAt: null,
             });
-            await sketchStore.put(sketchUserId, documentValue);
             usedIds.add(documentValue.id);
-            importedSketchCount += 1;
+            preparedSketches.push(documentValue);
           }
+        }
+
+        // Phase 2: Atomar anwenden. Bei einem Fehler wird alles zurückgerollt –
+        // es gibt keinen halb importierten Zustand.
+        const previousState = cloneState(state);
+        const writtenSketchIds = [];
+        try {
+          for (const documentValue of preparedSketches) {
+            await sketchStore.put(sketchUserId, documentValue);
+            writtenSketchIds.push(documentValue.id);
+          }
+          state = nextState; save(); applyTheme();
+        } catch (applyError) {
+          state = previousState;
+          try { save(); } catch (_saveError) { /* Der bisherige Stand liegt weiterhin im Speicher. */ }
+          await Promise.allSettled(writtenSketchIds.map((documentId) => sketchStore.delete(sketchUserId, documentId)));
+          throw new Error(`Es wurde nichts importiert (${applyError?.message || applyError})`);
+        }
+        if (preparedSketches.length) {
           sketchDocuments = (await sketchStore.list(sketchUserId)).filter((documentValue) => !documentValue.deletedAt);
           renderSketches();
           scheduleSketchSync();
@@ -2817,7 +2936,7 @@
         currentMonday = dateStr(mondayOf(new Date()));
         if (parseDate(currentMonday) < parseDate(state.settings.startMonday)) currentMonday = state.settings.startMonday;
         selectedDate = defaultSelectedFor(currentMonday);
-        closeSheet(); render(); toast(importedSketchCount ? `Import erfolgreich · ${importedSketchCount} Skizzen` : "Import erfolgreich");
+        closeSheet(); render(); toast(preparedSketches.length ? `Import erfolgreich · ${preparedSketches.length} Skizzen` : "Import erfolgreich");
       } catch (err) { alert("Import fehlgeschlagen: " + err.message); }
       finally { e.target.value = ""; }
     };
@@ -2963,7 +3082,7 @@
       if (input.value === "") delete entry[input.dataset.healthField];
       else {
         const value = Number(input.value);
-        entry[input.dataset.healthField] = Number.isFinite(value) && value >= 0 ? value : 0;
+        entry[input.dataset.healthField] = Number.isFinite(value) && value >= 0 ? Math.min(value, HEALTH_VALUE_MAX) : 0;
       }
       if (Object.keys(entry).length) state.health.entries[healthSelected] = entry;
       else delete state.health.entries[healthSelected];
@@ -3112,7 +3231,7 @@
           }
         })();
       });
-      navigator.serviceWorker.register("service-worker.js?v=28").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=29").then((registration) => registration.update()).catch(() => {});
     }
   }
 

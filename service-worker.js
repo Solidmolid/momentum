@@ -1,6 +1,6 @@
 /* Momentum – Service Worker (Offline-Fähigkeit) */
 const CACHE_PREFIX = "momentum-";
-const CACHE = "momentum-v28";
+const CACHE = "momentum-v29";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,7 +9,7 @@ const ASSETS = [
   "./cloud.js?v=5",
   "./pomodoro.js?v=2",
   "./sketch.js?v=2",
-  "./app.js?v=28",
+  "./app.js?v=29",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -50,5 +50,16 @@ self.addEventListener("fetch", (e) => {
       caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
       return res;
     }).catch(() => hit))
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      const open = windowClients.find((client) => typeof client.focus === "function");
+      if (open) return open.focus();
+      return self.clients.openWindow("./");
+    })
   );
 });

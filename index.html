@@ -41,11 +41,11 @@
       </div>
       <div class="field">
         <label for="auth-email">E-Mail</label>
-        <input class="input" id="auth-email" type="email" autocomplete="email" inputmode="email" required placeholder="name@beispiel.de">
+        <input class="input" id="auth-email" type="email" maxlength="254" autocomplete="email" inputmode="email" required placeholder="name@beispiel.de">
       </div>
       <div class="field">
         <label for="auth-password">Passwort</label>
-        <input class="input" id="auth-password" type="password" minlength="8" autocomplete="current-password" required placeholder="Mindestens 8 Zeichen">
+        <input class="input" id="auth-password" type="password" minlength="8" maxlength="72" autocomplete="current-password" required placeholder="Mindestens 8 Zeichen">
       </div>
       <button class="btn auth-submit" id="auth-submit" type="submit">Anmelden</button>
       <button class="auth-forgot" id="auth-forgot" type="button">Passwort vergessen?</button>
@@ -344,4 +344,4 @@
 <script src="cloud.js?v=5" defer></script>
 <script src="pomodoro.js?v=2" defer></script>
 <script src="sketch.js?v=2" defer></script>
-<script src="app.js?v=28" defer></script>
+<script src="app.js?v=29" defer></script>

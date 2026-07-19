@@ -62,7 +62,8 @@ läuft als installierbare PWA über **GitHub Pages** mit Supabase als Cloud-Dien
 - Hell/Dunkel
 - Alle sechs Bereiche in den Einstellungen sortieren oder ausblenden, ohne Daten zu löschen
 - Läuft offline (PWA) & „Zum Home-Bildschirm hinzufügen"
-- Daten-Export/-Import einschließlich Skizzen als Backup
+- Daten-Export/-Import einschließlich Skizzen als Backup – der Import prüft alles vorab und wird nur vollständig oder gar nicht übernommen
+- Bei parallelen Änderungen bleibt die verdrängte Fassung als Konfliktsicherung erhalten und kann in den Einstellungen heruntergeladen werden
 
 ## Wichtig: Wo liegen die Daten?
 
