@@ -7,9 +7,9 @@
 
   const KEY = "momentum_v1";
   const LEGACY_OWNER_KEY = "momentum_legacy_owner";
-  const APP_VERSION = "5.0.1";
+  const APP_VERSION = "5.0.2";
   // Muss mit CACHE in service-worker.js übereinstimmen.
-  const APP_CACHE = "momentum-v29";
+  const APP_CACHE = "momentum-v30";
   const STATE_VERSION = 7;
   const LOCAL_PREVIEW = typeof location !== "undefined"
     && ["localhost", "127.0.0.1"].includes(location.hostname)
@@ -3252,7 +3252,7 @@
           }
         })();
       });
-      navigator.serviceWorker.register("service-worker.js?v=29").then((registration) => registration.update()).catch(() => {});
+      navigator.serviceWorker.register("service-worker.js?v=30").then((registration) => registration.update()).catch(() => {});
     }
   }
 

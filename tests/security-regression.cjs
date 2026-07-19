@@ -31,14 +31,14 @@ function appSecurityApi() {
   const deletedCaches = [];
   const deletedRequests = [];
   const currentRequests = [
-    { url: "http://127.0.0.1:8124/app.js?v=29" },
+    { url: "http://127.0.0.1:8124/app.js?v=30" },
     { url: "https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states" },
   ];
   const caches = {
-    async keys() { return ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27", "momentum-v28", "momentum-v29", "another-app-v1"]; },
+    async keys() { return ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27", "momentum-v28", "momentum-v29", "momentum-v30", "another-app-v1"]; },
     async delete(name) { deletedCaches.push(name); return true; },
     async open(name) {
-      assert.equal(name, "momentum-v29");
+      assert.equal(name, "momentum-v30");
       return {
         async keys() { return currentRequests; },
         async delete(request) { deletedRequests.push(request.url); return true; },
@@ -119,7 +119,7 @@ async function testStateSanitizingAndLogoutPurge() {
 
   await api.purgePrivateBrowserData();
   assert.deepEqual([...values.entries()], [["unrelated", "keep"]]);
-  assert.deepEqual(deletedCaches, ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27", "momentum-v28"]);
+  assert.deepEqual(deletedCaches, ["momentum-v22", "momentum-v23", "momentum-v24", "momentum-v25", "momentum-v26", "momentum-v27", "momentum-v28", "momentum-v29"]);
   assert.deepEqual(deletedRequests, ["https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"]);
 }
 
@@ -162,7 +162,7 @@ function testServiceWorkerCacheBoundary() {
   assert.equal(isIntercepted("https://uytacdogqercenlgbpgb.supabase.co/rest/v1/user_states"), false);
   assert.equal(isIntercepted("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.3/dist/umd/supabase.js"), false);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/vendor/supabase-2.110.3.js"), true);
-  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=29"), true);
+  assert.equal(isIntercepted("https://solidmolid.github.io/momentum/app.js?v=30"), true);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/private.json"), false);
   assert.equal(isIntercepted("https://solidmolid.github.io/momentum/", "navigate"), true);
 }
